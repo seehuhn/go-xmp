@@ -17,7 +17,6 @@
 package xmp
 
 import (
-	"encoding/xml"
 	"fmt"
 	"testing"
 )
@@ -33,37 +32,16 @@ func TestDublinCore(t *testing.T) {
 		Coverage: Text{Value: "Earth"},
 	}
 
-	e := NewEncoder()
-	e.Encoder.Indent("", "  ")
-
-	name := xml.Name{
-		// Space: rdfNS,
-		Local: "rdf:RDF",
-	}
-	err := e.EncodeToken(xml.StartElement{
-		Name: name,
-		Attr: []xml.Attr{
-			{Name: xml.Name{Local: "xmlns:rdf"}, Value: rdfNS},
+	packet := &Packet{
+		Properties: map[string]Model{
+			"http://purl.org/dc/elements/1.1/": &dc,
 		},
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 
-	err = dc.EncodeProperties(e, "dc")
-	if err != nil {
-		t.Errorf("EncodeProperties failed: %v", err)
-	}
-
-	err = e.EncodeToken(xml.EndElement{Name: name})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	err = e.Encoder.Close()
+	body, err := packet.Encode()
 	if err != nil {
 		t.Errorf("Close failed: %v", err)
 	}
 
-	fmt.Println(e.buf.String())
+	fmt.Println(string(body))
 }

@@ -23,6 +23,10 @@ type Text struct {
 	Q
 }
 
+func (t Text) IsZero() bool {
+	return t.Value == ""
+}
+
 func (t Text) EncodeValue(e *Encoder) error {
 	token := xml.CharData(t.Value)
 	return e.EncodeToken(token)
@@ -37,19 +41,18 @@ type UnorderedArray[T Value] struct {
 	Q
 }
 
+func (a UnorderedArray[T]) IsZero() bool {
+	return len(a.Values) == 0
+}
+
 func (a UnorderedArray[T]) EncodeValue(e *Encoder) error {
-	prefix := "rdf" // TODO(voss)
-	outer := xml.Name{
-		Local: prefix + ":Bag",
-	}
+	outer := e.MakeName(rdfNS, "Bag")
 	err := e.EncodeToken(xml.StartElement{Name: outer})
 	if err != nil {
 		return err
 	}
 
-	inner := xml.Name{
-		Local: prefix + ":li",
-	}
+	inner := e.MakeName(rdfNS, "li")
 	for _, v := range a.Values {
 		err = e.EncodeToken(xml.StartElement{Name: inner})
 		if err != nil {

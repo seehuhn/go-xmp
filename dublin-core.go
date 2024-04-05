@@ -16,6 +16,8 @@
 
 package xmp
 
+import "encoding/xml"
+
 // DublinCore represents the properties in the Dublin Core namespace.
 type DublinCore struct {
 	Contributor UnorderedArray[ProperName]
@@ -36,9 +38,47 @@ type DublinCore struct {
 }
 
 func (dc *DublinCore) EncodeProperties(e *Encoder, pfx string) error {
-	err := dc.Contributor.EncodeValue(e)
-	if err != nil {
-		return err
+	if !dc.Contributor.IsZero() {
+		err := e.EncodeToken(xml.StartElement{Name: e.MakeName(dublinCoreNS, "contributor")})
+		if err != nil {
+			return err
+		}
+		err = dc.Contributor.EncodeValue(e)
+		if err != nil {
+			return err
+		}
+		err = e.EncodeToken(xml.EndElement{Name: e.MakeName(dublinCoreNS, "contributor")})
+		if err != nil {
+			return err
+		}
 	}
+
+	if !dc.Coverage.IsZero() {
+		err := e.EncodeToken(xml.StartElement{Name: e.MakeName(dublinCoreNS, "coverage")})
+		if err != nil {
+			return err
+		}
+		err = dc.Coverage.EncodeValue(e)
+		if err != nil {
+			return err
+		}
+		err = e.EncodeToken(xml.EndElement{Name: e.MakeName(dublinCoreNS, "coverage")})
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
+
+func (dc *DublinCore) NameSpaces() []string {
+	return []string{dublinCoreNS, rdfNS}
+}
+
+func (dc *DublinCore) DefaultPrefix() string {
+	return "dc"
+}
+
+const (
+	dublinCoreNS = "http://purl.org/dc/elements/1.1/"
+)

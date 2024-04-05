@@ -18,102 +18,95 @@ package xmp
 
 import (
 	"encoding/xml"
-	"fmt"
-	"io"
 	"net/url"
+	"sort"
+
+	"golang.org/x/exp/maps"
 )
+
+type Value interface {
+	IsZero() bool
+	EncodeValue(e *Encoder) error
+	Qualifiers() []Qualifier
+}
+
+// Q can be used to simplify the implementation of [Value] objects.
+type Q []Qualifier
+
+// Qualifiers implements [Value.Qualifiers].
+func (q Q) Qualifiers() []Qualifier {
+	return q
+}
+
+// Model is a group of XMP properties.
+type Model interface {
+	EncodeProperties(e *Encoder, prefix string) error
+	NameSpaces() []string
+	DefaultPrefix() string
+}
 
 // Packet represents an XMP packet.
 type Packet struct {
-	Properties map[xml.Name]Property
-	About      *url.URL
+	// Properties maps namespaces to models.
+	Properties map[string]Model
+
+	// About (optional) is the URL of the resource described by the XMP packet.
+	About *url.URL
 }
 
-// Property is an XMP metadata property.
-type Property struct {
-	Name  string
-	Value string
-}
-
-const (
-	rdfNS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-)
-
-func Read(r io.Reader) (*Packet, error) {
-	dec := xml.NewDecoder(r)
-	p := &Packet{
-		Properties: make(map[xml.Name]Property),
+func (p *Packet) Encode() ([]byte, error) {
+	e, err := NewEncoder()
+	if err != nil {
+		return nil, err
 	}
 
-	var level int
-	descriptionLevel := -1
-	propertyLevel := -1
-	propertyNS := ""
-	propertyLocal := ""
-	var propertyTokens []xml.Token
-tokenLoop:
-	for {
-		t, err := dec.Token()
-		if err == io.EOF {
-			break
+	namespaces := maps.Keys(p.Properties)
+	sort.Strings(namespaces)
+	about := ""
+	if p.About != nil {
+		about = p.About.String()
+	}
+	for _, ns := range namespaces {
+		model := p.Properties[ns]
+
+		var attrs []xml.Attr
+		attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "about"}, Value: about})
+		for _, ns := range model.NameSpaces() {
+			_, ok := e.nsPrefix[ns]
+			if !ok {
+				// TODO(voss): how to rewind this once the environment is closed?
+				pfx := e.addNamespace(ns, model.DefaultPrefix())
+				attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "xmlns:" + pfx}, Value: ns})
+			}
 		}
+		err := e.EncodeToken(xml.StartElement{
+			Name: e.MakeName(rdfNS, "Description"),
+			Attr: attrs,
+		})
 		if err != nil {
 			return nil, err
 		}
 
-		switch t := t.(type) {
-		case xml.StartElement:
-			if level > 0 || t.Name.Space == rdfNS && t.Name.Local == "RDF" {
-				level++
-			} else {
-				continue tokenLoop
-			}
-			if descriptionLevel < 0 && t.Name.Space == rdfNS && t.Name.Local == "Description" {
-				var about string
-				for _, a := range t.Attr {
-					if a.Name.Space == rdfNS && a.Name.Local == "about" {
-						about = a.Value
-						break
-					}
-				}
-				aboutURL, err := url.Parse(about)
-				if err != nil {
-					return nil, err
-				}
-				if p.About == nil {
-					p.About = aboutURL
-				} else if *p.About != *aboutURL {
-					return nil, fmt.Errorf("inconsistent about attributes: %s != %s", p.About, aboutURL)
-				}
-				descriptionLevel = level
-			} else if descriptionLevel >= 0 && propertyLevel < 0 {
-				propertyLevel = level
-				propertyNS = t.Name.Space
-				propertyLocal = t.Name.Local
-				propertyTokens = nil
-			}
-		case xml.EndElement:
-			if level == propertyLevel {
-				propertyTokens = append(propertyTokens, t)
-				fmt.Println(propertyNS)
-				fmt.Println(propertyLocal)
-				for _, t := range propertyTokens {
-					fmt.Println(".", t)
-				}
-				fmt.Println()
-				propertyLevel = -1
-			}
-			if level == descriptionLevel {
-				descriptionLevel = -1
-			}
-			if level > 0 {
-				level--
-			}
+		err = model.EncodeProperties(e, ns)
+		if err != nil {
+			return nil, err
 		}
 
-		if propertyLevel >= 0 {
-			propertyTokens = append(propertyTokens, t)
-		}
+		err = e.EncodeToken(xml.EndElement{
+			Name: e.MakeName(rdfNS, "Description"),
+		})
 	}
-	return p, nil
+
+	err = e.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return e.buf.Bytes(), nil
+
+}
+
+type Qualifier struct {
+	Name  xml.Name
+	Value Value
 }
