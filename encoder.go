@@ -54,7 +54,7 @@ func NewEncoder() (*Encoder, error) {
 
 	e.addNamespace(rdfNS, "rdf")
 	err = e.EncodeToken(xml.StartElement{
-		Name: e.MakeName(rdfNS, "RDF"),
+		Name: e.makeName(rdfNS, "RDF"),
 		Attr: []xml.Attr{
 			{Name: xml.Name{Local: "xmlns:rdf"}, Value: rdfNS},
 		},
@@ -68,7 +68,7 @@ func NewEncoder() (*Encoder, error) {
 
 func (e *Encoder) Close() error {
 	err := e.EncodeToken(xml.EndElement{
-		Name: e.MakeName(rdfNS, "RDF"),
+		Name: e.makeName(rdfNS, "RDF"),
 	})
 	if err != nil {
 		return err
@@ -94,7 +94,28 @@ func (e *Encoder) Close() error {
 	return nil
 }
 
-func (e *Encoder) MakeName(space, local string) xml.Name {
+func (e *Encoder) EncodeValue(ns, name string, value Value) error {
+	if value.IsZero() {
+		return nil
+	}
+
+	err := e.EncodeToken(xml.StartElement{Name: e.makeName(ns, name)})
+	if err != nil {
+		return err
+	}
+	err = value.EncodeXMP(e)
+	if err != nil {
+		return err
+	}
+	err = e.EncodeToken(xml.EndElement{Name: e.makeName(ns, name)})
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (e *Encoder) makeName(space, local string) xml.Name {
 	prefix, ok := e.nsPrefix[space]
 	if !ok {
 		panic("namespace not found")

@@ -26,8 +26,9 @@ import (
 
 type Value interface {
 	IsZero() bool
-	EncodeValue(e *Encoder) error
 	Qualifiers() []Qualifier
+	EncodeXMP(*Encoder) error
+	DecodeXMP([]xml.Token) error
 }
 
 // Q can be used to simplify the implementation of [Value] objects.
@@ -80,7 +81,7 @@ func (p *Packet) Encode() ([]byte, error) {
 			}
 		}
 		err := e.EncodeToken(xml.StartElement{
-			Name: e.MakeName(rdfNS, "Description"),
+			Name: e.makeName(rdfNS, "Description"),
 			Attr: attrs,
 		})
 		if err != nil {
@@ -93,7 +94,7 @@ func (p *Packet) Encode() ([]byte, error) {
 		}
 
 		err = e.EncodeToken(xml.EndElement{
-			Name: e.MakeName(rdfNS, "Description"),
+			Name: e.makeName(rdfNS, "Description"),
 		})
 	}
 

@@ -16,12 +16,10 @@
 
 package xmp
 
-import "encoding/xml"
-
 // DublinCore represents the properties in the Dublin Core namespace.
 type DublinCore struct {
-	Contributor UnorderedArray[ProperName]
-	Coverage    Text
+	Contributor *UnorderedArray[*ProperName]
+	Coverage    *Text
 	// Creator     string
 	// Date        string
 	// Description string
@@ -38,34 +36,14 @@ type DublinCore struct {
 }
 
 func (dc *DublinCore) EncodeProperties(e *Encoder, pfx string) error {
-	if !dc.Contributor.IsZero() {
-		err := e.EncodeToken(xml.StartElement{Name: e.MakeName(dublinCoreNS, "contributor")})
-		if err != nil {
-			return err
-		}
-		err = dc.Contributor.EncodeValue(e)
-		if err != nil {
-			return err
-		}
-		err = e.EncodeToken(xml.EndElement{Name: e.MakeName(dublinCoreNS, "contributor")})
-		if err != nil {
-			return err
-		}
+	err := e.EncodeValue(dublinCoreNS, "contributor", dc.Contributor)
+	if err != nil {
+		return err
 	}
 
-	if !dc.Coverage.IsZero() {
-		err := e.EncodeToken(xml.StartElement{Name: e.MakeName(dublinCoreNS, "coverage")})
-		if err != nil {
-			return err
-		}
-		err = dc.Coverage.EncodeValue(e)
-		if err != nil {
-			return err
-		}
-		err = e.EncodeToken(xml.EndElement{Name: e.MakeName(dublinCoreNS, "coverage")})
-		if err != nil {
-			return err
-		}
+	err = e.EncodeValue(dublinCoreNS, "coverage", dc.Coverage)
+	if err != nil {
+		return err
 	}
 
 	return nil

@@ -23,13 +23,13 @@ import (
 
 func TestDublinCore(t *testing.T) {
 	dc := DublinCore{
-		Contributor: UnorderedArray[ProperName]{
-			Values: []ProperName{
+		Contributor: &UnorderedArray[*ProperName]{
+			Values: []*ProperName{
 				{Text: Text{Value: "Alice"}},
 				{Text: Text{Value: "Bob"}},
 			},
 		},
-		Coverage: Text{Value: "Earth"},
+		Coverage: &Text{Value: "Earth"},
 	}
 
 	packet := &Packet{
