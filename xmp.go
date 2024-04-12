@@ -20,30 +20,36 @@ import (
 	"encoding/xml"
 	"net/url"
 	"sort"
+	"sync"
 
 	"golang.org/x/exp/maps"
 )
 
+// Model is a group of XMP properties.
+type Model interface {
+	NameSpaces() []string
+	EncodeXMP(e *Encoder, prefix string) error
+}
+
+// Value is the value of an XMP property.
 type Value interface {
 	IsZero() bool
 	Qualifiers() []Qualifier
 	EncodeXMP(*Encoder) error
-	DecodeXMP([]xml.Token) error
+	DecodeAnother([]xml.Token) (Value, error)
 }
 
-// Q can be used to simplify the implementation of [Value] objects.
+type Qualifier struct {
+	Name  xml.Name
+	Value Value
+}
+
+// Q is used to simplify the implementation of [Value] objects.
 type Q []Qualifier
 
 // Qualifiers implements [Value.Qualifiers].
 func (q Q) Qualifiers() []Qualifier {
 	return q
-}
-
-// Model is a group of XMP properties.
-type Model interface {
-	EncodeProperties(e *Encoder, prefix string) error
-	NameSpaces() []string
-	DefaultPrefix() string
 }
 
 // Packet represents an XMP packet.
@@ -76,25 +82,25 @@ func (p *Packet) Encode() ([]byte, error) {
 			_, ok := e.nsPrefix[ns]
 			if !ok {
 				// TODO(voss): how to rewind this once the environment is closed?
-				pfx := e.addNamespace(ns, model.DefaultPrefix())
+				pfx := e.addNamespace(ns)
 				attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "xmlns:" + pfx}, Value: ns})
 			}
 		}
 		err := e.EncodeToken(xml.StartElement{
-			Name: e.makeName(rdfNS, "Description"),
+			Name: e.makeName(RDFNameSpace, "Description"),
 			Attr: attrs,
 		})
 		if err != nil {
 			return nil, err
 		}
 
-		err = model.EncodeProperties(e, ns)
+		err = model.EncodeXMP(e, ns)
 		if err != nil {
 			return nil, err
 		}
 
 		err = e.EncodeToken(xml.EndElement{
-			Name: e.makeName(rdfNS, "Description"),
+			Name: e.makeName(RDFNameSpace, "Description"),
 		})
 	}
 
@@ -104,10 +110,38 @@ func (p *Packet) Encode() ([]byte, error) {
 	}
 
 	return e.buf.Bytes(), nil
-
 }
 
-type Qualifier struct {
-	Name  xml.Name
-	Value Value
+func RegisterModel(nameSpace, defaultLocal string, update func(Model, []xml.Token) (Model, error)) {
+	modelMutex.Lock()
+	defer modelMutex.Unlock()
+	modelReaders[nameSpace] = &modelInfo{nameSpace, defaultLocal, update}
 }
+
+func nsPrefix(ns string) string {
+	modelMutex.Lock()
+	info, ok := modelReaders[ns]
+	modelMutex.Unlock()
+
+	var local string
+	if ok {
+		local = info.defaultLocal
+	}
+	if local == "" && ns == RDFNameSpace {
+		local = "rdf"
+	}
+	if local == "" {
+		panic("not implemented") // TODO(voss): implement
+	}
+	return local
+}
+
+type modelInfo struct {
+	nameSpace, defaultLocal string
+	update                  func(Model, []xml.Token) (Model, error)
+}
+
+var (
+	modelReaders = make(map[string]*modelInfo)
+	modelMutex   sync.Mutex
+)

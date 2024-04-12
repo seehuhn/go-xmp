@@ -33,7 +33,6 @@ func Read(r io.Reader) (*Packet, error) {
 	descriptionLevel := -1
 	propertyLevel := -1
 	propertyNS := ""
-	propertyLocal := ""
 	var propertyTokens []xml.Token
 tokenLoop:
 	for {
@@ -47,15 +46,15 @@ tokenLoop:
 
 		switch t := t.(type) {
 		case xml.StartElement:
-			if level > 0 || t.Name.Space == rdfNS && t.Name.Local == "RDF" {
+			if level > 0 || t.Name.Space == RDFNameSpace && t.Name.Local == "RDF" {
 				level++
 			} else {
 				continue tokenLoop
 			}
-			if descriptionLevel < 0 && t.Name.Space == rdfNS && t.Name.Local == "Description" {
+			if descriptionLevel < 0 && t.Name.Space == RDFNameSpace && t.Name.Local == "Description" {
 				var about string
 				for _, a := range t.Attr {
-					if a.Name.Space == rdfNS && a.Name.Local == "about" {
+					if a.Name.Space == RDFNameSpace && a.Name.Local == "about" {
 						about = a.Value
 						break
 					}
@@ -73,18 +72,28 @@ tokenLoop:
 			} else if descriptionLevel >= 0 && propertyLevel < 0 {
 				propertyLevel = level
 				propertyNS = t.Name.Space
-				propertyLocal = t.Name.Local
 				propertyTokens = nil
 			}
 		case xml.EndElement:
 			if level == propertyLevel {
-				propertyTokens = append(propertyTokens, t)
-				fmt.Println(propertyNS)
-				fmt.Println(propertyLocal)
-				for _, t := range propertyTokens {
-					fmt.Println(".", t)
+				// We don't append the trailing EndElement, because it doesn't
+				// contain any useful information.  In contrast, the leading
+				// StartElement is required because it contains the property
+				// name.
+				info, ok := modelReaders[propertyNS]
+				if ok {
+					model, err := info.update(p.Properties[propertyNS], propertyTokens)
+					if err != nil {
+						return nil, err
+					}
+					p.Properties[propertyNS] = model
+				} else {
+					fmt.Println(propertyNS)
+					for _, t := range propertyTokens {
+						fmt.Println(".", t)
+					}
+					fmt.Println()
 				}
-				fmt.Println()
 				propertyLevel = -1
 			}
 			if level == descriptionLevel {
@@ -96,7 +105,7 @@ tokenLoop:
 		}
 
 		if propertyLevel >= 0 {
-			propertyTokens = append(propertyTokens, t)
+			propertyTokens = append(propertyTokens, xml.CopyToken(t))
 		}
 	}
 	return p, nil

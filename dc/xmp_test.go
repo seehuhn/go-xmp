@@ -14,34 +14,27 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-package xmp
+package dc
 
 import (
 	"fmt"
+	"os"
 	"testing"
+
+	"seehuhn.de/go/xmp"
 )
 
-func TestDublinCore(t *testing.T) {
-	dc := DublinCore{
-		Contributor: &UnorderedArray[*ProperName]{
-			Values: []*ProperName{
-				{Text: Text{Value: "Alice"}},
-				{Text: Text{Value: "Bob"}},
-			},
-		},
-		Coverage: &Text{Value: "Earth"},
-	}
-
-	packet := &Packet{
-		Properties: map[string]Model{
-			"http://purl.org/dc/elements/1.1/": &dc,
-		},
-	}
-
-	body, err := packet.Encode()
+func TestXMP(t *testing.T) {
+	fd, err := os.Open("test.xml")
 	if err != nil {
-		t.Errorf("Close failed: %v", err)
+		t.Fatal(err)
+	}
+	defer fd.Close()
+
+	p, err := xmp.Read(fd)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	fmt.Println(string(body))
+	fmt.Printf("%#v\n", p.Properties[NameSpace])
 }

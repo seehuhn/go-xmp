@@ -52,11 +52,11 @@ func NewEncoder() (*Encoder, error) {
 		return nil, err
 	}
 
-	e.addNamespace(rdfNS, "rdf")
+	e.addNamespace(RDFNameSpace)
 	err = e.EncodeToken(xml.StartElement{
-		Name: e.makeName(rdfNS, "RDF"),
+		Name: e.makeName(RDFNameSpace, "RDF"),
 		Attr: []xml.Attr{
-			{Name: xml.Name{Local: "xmlns:rdf"}, Value: rdfNS},
+			{Name: xml.Name{Local: "xmlns:rdf"}, Value: RDFNameSpace},
 		},
 	})
 	if err != nil {
@@ -68,7 +68,7 @@ func NewEncoder() (*Encoder, error) {
 
 func (e *Encoder) Close() error {
 	err := e.EncodeToken(xml.EndElement{
-		Name: e.makeName(rdfNS, "RDF"),
+		Name: e.makeName(RDFNameSpace, "RDF"),
 	})
 	if err != nil {
 		return err
@@ -123,18 +123,14 @@ func (e *Encoder) makeName(space, local string) xml.Name {
 	return xml.Name{Local: prefix + ":" + local}
 }
 
-func (e *Encoder) addNamespace(ns, defaultPrefix string) string {
+func (e *Encoder) addNamespace(ns string) string {
 	if prefix, ok := e.nsPrefix[ns]; ok {
 		return prefix
 	}
 
-	prefix := defaultPrefix
-	if _, ok := e.prefixNS[prefix]; ok || prefix == "" {
-		// choose a new prefix
-		switch ns {
-		default:
-			panic("not implemented") // TODO(voss): implement
-		}
+	prefix := nsPrefix(ns)
+	if _, alreadyUsed := e.prefixNS[prefix]; alreadyUsed {
+		panic("prefix already used") // TODO(voss): implement
 	}
 
 	e.nsPrefix[ns] = prefix
@@ -143,5 +139,5 @@ func (e *Encoder) addNamespace(ns, defaultPrefix string) string {
 }
 
 const (
-	rdfNS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	RDFNameSpace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 )
