@@ -27,29 +27,43 @@ import (
 
 // Model is a group of XMP properties.
 type Model interface {
-	NameSpaces() []string
+	NameSpaces(map[string]struct{}) map[string]struct{}
 	EncodeXMP(e *Encoder, prefix string) error
 }
 
 // Value is the value of an XMP property.
 type Value interface {
+	NameSpaces(map[string]struct{}) map[string]struct{}
 	IsZero() bool
 	Qualifiers() []Qualifier
 	EncodeXMP(*Encoder) error
 	DecodeAnother([]xml.Token) (Value, error)
 }
 
+// A Qualifier can be used to attach additional information to a [Value].
 type Qualifier struct {
 	Name  xml.Name
 	Value Value
 }
 
 // Q is used to simplify the implementation of [Value] objects.
+// It provides a default implementation of the Qualifiers method.
 type Q []Qualifier
 
-// Qualifiers implements [Value.Qualifiers].
+// Qualifiers implements part of the [Value] interface.
 func (q Q) Qualifiers() []Qualifier {
 	return q
+}
+
+func (q Q) NameSpaces(m map[string]struct{}) map[string]struct{} {
+	if m == nil {
+		m = make(map[string]struct{})
+	}
+	for _, q := range q {
+		m[q.Name.Space] = struct{}{}
+		m = q.Value.NameSpaces(m)
+	}
+	return m
 }
 
 // Packet represents an XMP packet.
@@ -78,7 +92,7 @@ func (p *Packet) Encode() ([]byte, error) {
 
 		var attrs []xml.Attr
 		attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "about"}, Value: about})
-		for _, ns := range model.NameSpaces() {
+		for ns := range model.NameSpaces(nil) {
 			_, ok := e.nsPrefix[ns]
 			if !ok {
 				// TODO(voss): how to rewind this once the environment is closed?
@@ -112,6 +126,7 @@ func (p *Packet) Encode() ([]byte, error) {
 	return e.buf.Bytes(), nil
 }
 
+// RegisterModel registers a model reader for a given namespace.
 func RegisterModel(nameSpace, defaultLocal string, update func(Model, []xml.Token) (Model, error)) {
 	modelMutex.Lock()
 	defer modelMutex.Unlock()
@@ -130,9 +145,11 @@ func nsPrefix(ns string) string {
 	if local == "" && ns == RDFNameSpace {
 		local = "rdf"
 	}
+
 	if local == "" {
 		panic("not implemented") // TODO(voss): implement
 	}
+
 	return local
 }
 

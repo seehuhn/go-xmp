@@ -39,7 +39,10 @@ type DublinCore struct {
 	// listed in order of decreasing precedence, if such order is significant.
 	Creator xmp.OrderedArray[xmp.ProperName]
 
-	// Date        string
+	// Date is a point or period of time associated with an event in the life
+	// cycle of the resource.
+	Date xmp.OrderedArray[xmp.Date]
+
 	// Description string
 	// Format      string
 	// Identifier  string
@@ -55,12 +58,12 @@ type DublinCore struct {
 
 // EncodeXMP implements the [xmp.Model] interface.
 func (dc *DublinCore) EncodeXMP(e *xmp.Encoder, pfx string) error {
-	err := e.EncodeValue(NameSpace, "contributor", dc.Contributor)
+	err := e.EncodeProperty(NameSpace, "contributor", dc.Contributor)
 	if err != nil {
 		return err
 	}
 
-	err = e.EncodeValue(NameSpace, "coverage", dc.Coverage)
+	err = e.EncodeProperty(NameSpace, "coverage", dc.Coverage)
 	if err != nil {
 		return err
 	}
@@ -69,8 +72,15 @@ func (dc *DublinCore) EncodeXMP(e *xmp.Encoder, pfx string) error {
 }
 
 // NameSpaces implements the [xmp.Model] interface.
-func (dc *DublinCore) NameSpaces() []string {
-	return []string{NameSpace, xmp.RDFNameSpace}
+func (dc *DublinCore) NameSpaces(m map[string]struct{}) map[string]struct{} {
+	if m == nil {
+		m = make(map[string]struct{})
+	}
+
+	m[NameSpace] = struct{}{}
+	m[xmp.RDFNameSpace] = struct{}{}
+
+	return m
 }
 
 func updateDublinCore(m xmp.Model, tokens []xml.Token) (xmp.Model, error) {

@@ -21,7 +21,17 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 )
+
+func ReadFile(filename string) (*Packet, error) {
+	f, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return Read(f)
+}
 
 func Read(r io.Reader) (*Packet, error) {
 	dec := xml.NewDecoder(r)

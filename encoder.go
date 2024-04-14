@@ -94,9 +94,14 @@ func (e *Encoder) Close() error {
 	return nil
 }
 
-func (e *Encoder) EncodeValue(ns, name string, value Value) error {
+func (e *Encoder) EncodeProperty(ns, name string, value Value) error {
 	if value.IsZero() {
 		return nil
+	}
+
+	qq := value.Qualifiers()
+	for _, q := range qq {
+		_ = q
 	}
 
 	err := e.EncodeToken(xml.StartElement{Name: e.makeName(ns, name)})

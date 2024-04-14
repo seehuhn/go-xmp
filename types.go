@@ -19,6 +19,7 @@ package xmp
 import (
 	"encoding/xml"
 	"errors"
+	"time"
 )
 
 type Text struct {
@@ -69,9 +70,68 @@ func (_ ProperName) DecodeAnother(tokens []xml.Token) (Value, error) {
 	return res, nil
 }
 
+// Date represents a date and time.
+type Date struct {
+	Value      time.Time
+	NumOmitted int // 1=omit nano, 2=omit sec, 3=omit time, 4=omit day, 5=month
+	Q
+}
+
+// IsZero implements the [Value] interface.
+func (d Date) IsZero() bool {
+	return d.Value.IsZero()
+}
+
+var dateFormats = []string{
+	"2006-01-02T15:04:05.999999999Z07:00",
+	"2006-01-02T15:04:05Z07:00",
+	"2006-01-02T15:04Z07:00",
+	"2006-01-02",
+	"2006-01",
+	"2006",
+}
+
+// EncodeXMP implements the [Value] interface.
+func (d Date) EncodeXMP(e *Encoder) error {
+	numOmitted := d.NumOmitted
+	numOmitted = min(numOmitted, len(dateFormats)-1)
+	numOmitted = max(numOmitted, 0)
+	format := dateFormats[numOmitted]
+	return e.EncodeToken(xml.CharData(d.Value.Format(format)))
+}
+
+// DecodeAnother implements the [Value] interface.
+func (_ Date) DecodeAnother(tokens []xml.Token) (Value, error) {
+	var dateString string
+	for _, token := range tokens {
+		switch token := token.(type) {
+		case xml.CharData:
+			dateString += string(token)
+		case xml.StartElement, xml.EndElement:
+			return nil, errMalformedXMP
+		}
+	}
+
+	for i, format := range dateFormats {
+		t, err := time.Parse(format, dateString)
+		if err == nil {
+			return Date{Value: t, NumOmitted: i}, nil
+		}
+	}
+	return nil, errMalformedXMP
+}
+
 type UnorderedArray[T Value] struct {
 	Values []T
 	Q
+}
+
+func (a UnorderedArray[T]) NameSpaces(m map[string]struct{}) map[string]struct{} {
+	m = a.Q.NameSpaces(m)
+	for _, v := range a.Values {
+		m = v.NameSpaces(m)
+	}
+	return m
 }
 
 func (a UnorderedArray[T]) IsZero() bool {
