@@ -24,6 +24,7 @@ import (
 	"os"
 )
 
+// ReadFile reads an XMP packet from a file.
 func ReadFile(filename string) (*Packet, error) {
 	f, err := os.Open(filename)
 	if err != nil {
@@ -33,6 +34,7 @@ func ReadFile(filename string) (*Packet, error) {
 	return Read(f)
 }
 
+// Read reads an XMP packet from a reader.
 func Read(r io.Reader) (*Packet, error) {
 	dec := xml.NewDecoder(r)
 	p := &Packet{
@@ -76,16 +78,19 @@ tokenLoop:
 				if p.About == nil {
 					p.About = aboutURL
 				} else if *p.About != *aboutURL {
-					return nil, fmt.Errorf("inconsistent about attributes: %s != %s", p.About, aboutURL)
+					return nil, fmt.Errorf("inconsistent `about` attributes: %s != %s", p.About, aboutURL)
 				}
 				descriptionLevel = level
 			} else if descriptionLevel >= 0 && propertyLevel < 0 {
-				propertyLevel = level
+				// start recording the XML tokens which make up the property
 				propertyNS = t.Name.Space
+				propertyLevel = level
 				propertyTokens = nil
 			}
 		case xml.EndElement:
 			if level == propertyLevel {
+				// propertyTokens contains the XML tokens which make up the property,
+				// including the start element (but not the end element).
 				propertyName := propertyTokens[0].(xml.StartElement).Name.Local
 				info, ok := modelReaders[propertyNS]
 				update := updateGeneric

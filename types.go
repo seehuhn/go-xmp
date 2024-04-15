@@ -22,6 +22,7 @@ import (
 	"time"
 )
 
+// Text represents a simple text value.
 type Text struct {
 	Value string
 	Q
@@ -31,16 +32,19 @@ func (t Text) String() string {
 	return t.Value
 }
 
+// IsZero implements the [Value] interface.
 func (t Text) IsZero() bool {
 	return t.Value == ""
 }
 
+// EncodeXMP implements the [Value] interface.
 func (t Text) EncodeXMP(e *Encoder) error {
 	token := xml.CharData(t.Value)
 	return e.EncodeToken(token)
 }
 
-func (_ Text) DecodeAnother(tokens []xml.Token) (Value, error) {
+// DecodeAnother implements the [Value] interface.
+func (Text) DecodeAnother(tokens []xml.Token) (Value, error) {
 	var res Text
 	for _, token := range tokens {
 		switch token := token.(type) {
@@ -53,11 +57,13 @@ func (_ Text) DecodeAnother(tokens []xml.Token) (Value, error) {
 	return res, nil
 }
 
+// ProperName represents a proper name.
 type ProperName struct {
 	Text
 }
 
-func (_ ProperName) DecodeAnother(tokens []xml.Token) (Value, error) {
+// DecodeAnother implements the [Value] interface.
+func (ProperName) DecodeAnother(tokens []xml.Token) (Value, error) {
 	var res ProperName
 	for _, token := range tokens {
 		switch token := token.(type) {
@@ -101,7 +107,7 @@ func (d Date) EncodeXMP(e *Encoder) error {
 }
 
 // DecodeAnother implements the [Value] interface.
-func (_ Date) DecodeAnother(tokens []xml.Token) (Value, error) {
+func (Date) DecodeAnother(tokens []xml.Token) (Value, error) {
 	var dateString string
 	for _, token := range tokens {
 		switch token := token.(type) {
@@ -121,17 +127,17 @@ func (_ Date) DecodeAnother(tokens []xml.Token) (Value, error) {
 	return nil, errMalformedXMP
 }
 
+// UnorderedArray represents an unordered array of values.
 type UnorderedArray[T Value] struct {
 	Values []T
 	Q
 }
 
-func (a UnorderedArray[T]) NameSpaces(m map[string]struct{}) map[string]struct{} {
-	m = a.Q.NameSpaces(m)
+func (a UnorderedArray[T]) NameSpaces(m map[string]struct{}) {
+	a.Q.NameSpaces(m)
 	for _, v := range a.Values {
-		m = v.NameSpaces(m)
+		v.NameSpaces(m)
 	}
-	return m
 }
 
 func (a UnorderedArray[T]) IsZero() bool {
@@ -168,7 +174,8 @@ func (a UnorderedArray[T]) EncodeXMP(e *Encoder) error {
 	return nil
 }
 
-func (_ UnorderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
+// DecodeAnother implements the [Value] interface.
+func (UnorderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 	var res UnorderedArray[T]
 	insideBag := false
 	childLevel := 0
@@ -213,6 +220,7 @@ func (_ UnorderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 	return res, nil
 }
 
+// OrderedArray represents an ordered array of values.
 type OrderedArray[T Value] struct {
 	Values []T
 	Q
@@ -252,7 +260,8 @@ func (a OrderedArray[T]) EncodeXMP(e *Encoder) error {
 	return nil
 }
 
-func (_ OrderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
+// DecodeAnother implements the [Value] interface.
+func (OrderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 	var res OrderedArray[T]
 	insideBag := false
 	childLevel := 0

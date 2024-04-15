@@ -27,13 +27,20 @@ import (
 
 // Model is a group of XMP properties.
 type Model interface {
-	NameSpaces(map[string]struct{}) map[string]struct{}
+	// NameSpaces populates the given map with all namespaces used by the
+	// properties of the model.  The namespace of the model itself will only be
+	// added to the map, if it is also used by a property.
+	NameSpaces(map[string]struct{})
+
+	// EncodeXMP encodes all the properties of the model to the given encoder.
+	// This does not include the enclosing rdf:Description element.
 	EncodeXMP(e *Encoder, prefix string) error
 }
 
 // Value is the value of an XMP property.
 type Value interface {
-	NameSpaces(map[string]struct{}) map[string]struct{}
+	NameSpaces(map[string]struct{})
+
 	IsZero() bool
 	Qualifiers() []Qualifier
 	EncodeXMP(*Encoder) error
@@ -55,15 +62,12 @@ func (q Q) Qualifiers() []Qualifier {
 	return q
 }
 
-func (q Q) NameSpaces(m map[string]struct{}) map[string]struct{} {
-	if m == nil {
-		m = make(map[string]struct{})
-	}
+// NameSpaces implements part of the [Value] interface.
+func (q Q) NameSpaces(m map[string]struct{}) {
 	for _, q := range q {
 		m[q.Name.Space] = struct{}{}
-		m = q.Value.NameSpaces(m)
+		q.Value.NameSpaces(m)
 	}
-	return m
 }
 
 // Packet represents an XMP packet.
@@ -75,6 +79,7 @@ type Packet struct {
 	About *url.URL
 }
 
+// Encode encodes the packet to an XML byte slice.
 func (p *Packet) Encode() ([]byte, error) {
 	e, err := NewEncoder()
 	if err != nil {
@@ -92,7 +97,11 @@ func (p *Packet) Encode() ([]byte, error) {
 
 		var attrs []xml.Attr
 		attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "about"}, Value: about})
-		for ns := range model.NameSpaces(nil) {
+
+		m := make(map[string]struct{})
+		m[ns] = struct{}{}
+		model.NameSpaces(m)
+		for ns := range m {
 			_, ok := e.nsPrefix[ns]
 			if !ok {
 				// TODO(voss): how to rewind this once the environment is closed?
@@ -144,10 +153,6 @@ func nsPrefix(ns string) string {
 	}
 	if local == "" && ns == RDFNameSpace {
 		local = "rdf"
-	}
-
-	if local == "" {
-		panic("not implemented") // TODO(voss): implement
 	}
 
 	return local

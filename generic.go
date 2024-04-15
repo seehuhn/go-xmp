@@ -16,28 +16,35 @@
 
 package xmp
 
-import "encoding/xml"
+import (
+	"encoding/xml"
+	"sort"
+
+	"golang.org/x/exp/maps"
+)
 
 type genericModel struct {
-	nameSpace  string
-	properties map[string]genericValue
+	Properties map[string]genericValue
 }
 
-func (g *genericModel) NameSpaces(m map[string]struct{}) map[string]struct{} {
-	if m == nil {
-		m = make(map[string]struct{})
+func (g *genericModel) NameSpaces(m map[string]struct{}) {
+	for _, value := range g.Properties {
+		value.NameSpaces(m)
 	}
-
-	m[g.nameSpace] = struct{}{}
-	for _, value := range g.properties {
-		m = value.NameSpaces(m)
-	}
-
-	return m
 }
 
 func (g *genericModel) EncodeXMP(e *Encoder, prefix string) error {
-	panic("not implemented")
+	names := maps.Keys(g.Properties)
+	sort.Strings(names)
+
+	for _, name := range names {
+		value := g.Properties[name]
+		err := e.EncodeProperty(prefix, name, value)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type genericValue struct {
@@ -49,15 +56,14 @@ func (v genericValue) IsZero() bool {
 	return false
 }
 
-func (v genericValue) NameSpaces(m map[string]struct{}) map[string]struct{} {
-	m = v.Q.NameSpaces(m)
+func (v genericValue) NameSpaces(m map[string]struct{}) {
+	v.Q.NameSpaces(m)
 	for _, token := range v.Tokens {
 		switch token := token.(type) {
 		case xml.StartElement:
 			m[token.Name.Space] = struct{}{}
 		}
 	}
-	return m
 }
 
 func (v genericValue) EncodeXMP(e *Encoder) error {
@@ -80,12 +86,12 @@ func updateGeneric(m Model, name string, tokens []xml.Token) (Model, error) {
 		g = m
 	} else {
 		g = &genericModel{
-			properties: make(map[string]genericValue),
+			Properties: make(map[string]genericValue),
 		}
 	}
 
 	value := genericValue{Tokens: tokens}
-	g.properties[name] = value
+	g.Properties[name] = value
 
 	return g, nil
 }

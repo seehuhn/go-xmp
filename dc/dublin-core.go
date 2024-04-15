@@ -23,6 +23,7 @@ import (
 )
 
 const (
+	// NameSpace is the namespace URI of the Dublin Core namespace.
 	NameSpace = "http://purl.org/dc/elements/1.1/"
 )
 
@@ -50,8 +51,15 @@ type DublinCore struct {
 	// Publisher   string
 	// Relation    string
 	// Rights      string
-	// Source      string
-	// Subject     string
+
+	// Source is a reference to a resource from which the present resource is
+	// derived, either in whole or in part.
+	Source xmp.Text
+
+	// Subject is a list of descriptive phrases or keywords that specify the
+	// content of the resource.
+	Subject xmp.UnorderedArray[xmp.Text]
+
 	// Title       string
 	// Type        string
 }
@@ -68,19 +76,47 @@ func (dc *DublinCore) EncodeXMP(e *xmp.Encoder, pfx string) error {
 		return err
 	}
 
+	err = e.EncodeProperty(NameSpace, "creator", dc.Creator)
+	if err != nil {
+		return err
+	}
+
+	err = e.EncodeProperty(NameSpace, "date", dc.Date)
+	if err != nil {
+		return err
+	}
+
+	// TODO(voss):
+	// - Description
+	// - Format
+	// - Identifier
+	// - Language
+	// - Publisher
+	// - Relation
+	// - Rights
+
+	err = e.EncodeProperty(NameSpace, "source", dc.Source)
+	if err != nil {
+		return err
+	}
+
+	err = e.EncodeProperty(NameSpace, "subject", dc.Subject)
+	if err != nil {
+		return err
+	}
+
+	// TODO(voss):
+	// - Title
+	// - Type
+
 	return nil
 }
 
 // NameSpaces implements the [xmp.Model] interface.
-func (dc *DublinCore) NameSpaces(m map[string]struct{}) map[string]struct{} {
-	if m == nil {
-		m = make(map[string]struct{})
-	}
-
+func (dc *DublinCore) NameSpaces(m map[string]struct{}) {
 	m[NameSpace] = struct{}{}
 	m[xmp.RDFNameSpace] = struct{}{}
-
-	return m
+	// TODO(voss): add namespaces of all properties
 }
 
 func updateDublinCore(m xmp.Model, name string, tokens []xml.Token) (xmp.Model, error) {
@@ -104,6 +140,32 @@ func updateDublinCore(m xmp.Model, name string, tokens []xml.Token) (xmp.Model, 
 			return nil, err
 		}
 		dc.Coverage = v.(xmp.Text)
+	case "creator":
+		v, err := dc.Creator.DecodeAnother(tokens)
+		if err != nil {
+			return nil, err
+		}
+		dc.Creator = v.(xmp.OrderedArray[xmp.ProperName])
+	case "date":
+		v, err := dc.Date.DecodeAnother(tokens)
+		if err != nil {
+			return nil, err
+		}
+		dc.Date = v.(xmp.OrderedArray[xmp.Date])
+
+	case "source":
+		v, err := dc.Source.DecodeAnother(tokens)
+		if err != nil {
+			return nil, err
+		}
+		dc.Source = v.(xmp.Text)
+	case "subject":
+		v, err := dc.Subject.DecodeAnother(tokens)
+		if err != nil {
+			return nil, err
+		}
+		dc.Subject = v.(xmp.UnorderedArray[xmp.Text])
+
 	}
 
 	return dc, nil
