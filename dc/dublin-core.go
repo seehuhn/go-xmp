@@ -115,8 +115,9 @@ func (dc *DublinCore) EncodeXMP(e *xmp.Encoder, pfx string) error {
 // NameSpaces implements the [xmp.Model] interface.
 func (dc *DublinCore) NameSpaces(m map[string]struct{}) {
 	m[NameSpace] = struct{}{}
-	m[xmp.RDFNameSpace] = struct{}{}
+
 	// TODO(voss): add namespaces of all properties
+	m[xmp.RDFNamespace] = struct{}{}
 }
 
 func updateDublinCore(m xmp.Model, name string, tokens []xml.Token) (xmp.Model, error) {

@@ -27,7 +27,7 @@ import (
 
 // Model is a group of XMP properties.
 type Model interface {
-	// NameSpaces populates the given map with all namespaces used by the
+	// NameSpaces populates the given map with all XML namespaces used by the
 	// properties of the model.  The namespace of the model itself will only be
 	// added to the map, if it is also used by a property.
 	NameSpaces(map[string]struct{})
@@ -110,7 +110,7 @@ func (p *Packet) Encode() ([]byte, error) {
 			}
 		}
 		err := e.EncodeToken(xml.StartElement{
-			Name: e.makeName(RDFNameSpace, "Description"),
+			Name: e.makeName(RDFNamespace, "Description"),
 			Attr: attrs,
 		})
 		if err != nil {
@@ -123,7 +123,7 @@ func (p *Packet) Encode() ([]byte, error) {
 		}
 
 		err = e.EncodeToken(xml.EndElement{
-			Name: e.makeName(RDFNameSpace, "Description"),
+			Name: e.makeName(RDFNamespace, "Description"),
 		})
 	}
 
@@ -151,7 +151,7 @@ func nsPrefix(ns string) string {
 	if ok {
 		local = info.defaultLocal
 	}
-	if local == "" && ns == RDFNameSpace {
+	if local == "" && ns == RDFNamespace {
 		local = "rdf"
 	}
 

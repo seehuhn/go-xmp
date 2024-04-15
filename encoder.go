@@ -58,11 +58,11 @@ func NewEncoder() (*Encoder, error) {
 		return nil, err
 	}
 
-	e.addNamespace(RDFNameSpace)
+	e.addNamespace(RDFNamespace)
 	err = e.EncodeToken(xml.StartElement{
-		Name: e.makeName(RDFNameSpace, "RDF"),
+		Name: e.makeName(RDFNamespace, "RDF"),
 		Attr: []xml.Attr{
-			{Name: xml.Name{Local: "xmlns:rdf"}, Value: RDFNameSpace},
+			{Name: xml.Name{Local: "xmlns:rdf"}, Value: RDFNamespace},
 		},
 	})
 	if err != nil {
@@ -76,7 +76,7 @@ func NewEncoder() (*Encoder, error) {
 // written to the encoder.
 func (e *Encoder) Close() error {
 	err := e.EncodeToken(xml.EndElement{
-		Name: e.makeName(RDFNameSpace, "RDF"),
+		Name: e.makeName(RDFNamespace, "RDF"),
 	})
 	if err != nil {
 		return err
@@ -536,6 +536,10 @@ var second = &unicode.RangeTable{
 }
 
 const (
-	// RDFNameSpace is the namespace for RDF.
-	RDFNameSpace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	// RDFNamespace is the namespace for RDF.
+	RDFNamespace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
+	// xmlNamespace is the namespace for XML.  This is hard-coded to the
+	// prefix "xml".
+	xmlNamespace = "http://www.w3.org/XML/1998/namespace"
 )

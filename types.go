@@ -145,13 +145,13 @@ func (a UnorderedArray[T]) IsZero() bool {
 }
 
 func (a UnorderedArray[T]) EncodeXMP(e *Encoder) error {
-	outer := e.makeName(RDFNameSpace, "Bag")
+	outer := e.makeName(RDFNamespace, "Bag")
 	err := e.EncodeToken(xml.StartElement{Name: outer})
 	if err != nil {
 		return err
 	}
 
-	inner := e.makeName(RDFNameSpace, "li")
+	inner := e.makeName(RDFNamespace, "li")
 	for _, v := range a.Values {
 		err = e.EncodeToken(xml.StartElement{Name: inner})
 		if err != nil {
@@ -185,12 +185,12 @@ func (UnorderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 		// an <rdf:Bag> element.  We ignore all other tokens (comments, etc).
 		switch t := t.(type) {
 		case xml.StartElement:
-			isLi := t.Name.Space == RDFNameSpace && t.Name.Local == "li"
+			isLi := t.Name.Space == RDFNamespace && t.Name.Local == "li"
 			if childLevel > 0 {
 				// pass
 			} else if insideBag && childLevel == 0 && isLi {
 				childStart = i + 1
-			} else if t.Name.Space == RDFNameSpace && t.Name.Local == "Bag" {
+			} else if t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
 				insideBag = true
 				res.Values = res.Values[:0]
 			} else {
@@ -201,7 +201,7 @@ func (UnorderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 			}
 		case xml.EndElement:
 			var v T
-			if t.Name.Space == RDFNameSpace && t.Name.Local == "li" {
+			if t.Name.Space == RDFNamespace && t.Name.Local == "li" {
 				childLevel--
 				if childLevel == 0 {
 					val, err := v.DecodeAnother(tokens[childStart:i])
@@ -210,7 +210,7 @@ func (UnorderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 					}
 					res.Values = append(res.Values, val.(T))
 				}
-			} else if insideBag && childLevel == 0 && t.Name.Space == RDFNameSpace && t.Name.Local == "Bag" {
+			} else if insideBag && childLevel == 0 && t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
 				insideBag = false
 			} else {
 				return nil, errMalformedXMP
@@ -231,13 +231,13 @@ func (a OrderedArray[T]) IsZero() bool {
 }
 
 func (a OrderedArray[T]) EncodeXMP(e *Encoder) error {
-	outer := e.makeName(RDFNameSpace, "Seq")
+	outer := e.makeName(RDFNamespace, "Seq")
 	err := e.EncodeToken(xml.StartElement{Name: outer})
 	if err != nil {
 		return err
 	}
 
-	inner := e.makeName(RDFNameSpace, "li")
+	inner := e.makeName(RDFNamespace, "li")
 	for _, v := range a.Values {
 		err = e.EncodeToken(xml.StartElement{Name: inner})
 		if err != nil {
@@ -271,12 +271,12 @@ func (OrderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 		// an <rdf:Bag> element.  We ignore all other tokens (comments, etc).
 		switch t := t.(type) {
 		case xml.StartElement:
-			isLi := t.Name.Space == RDFNameSpace && t.Name.Local == "li"
+			isLi := t.Name.Space == RDFNamespace && t.Name.Local == "li"
 			if childLevel > 0 {
 				// pass
 			} else if insideBag && childLevel == 0 && isLi {
 				childStart = i + 1
-			} else if t.Name.Space == RDFNameSpace && t.Name.Local == "Bag" {
+			} else if t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
 				insideBag = true
 				res.Values = res.Values[:0]
 			} else {
@@ -287,7 +287,7 @@ func (OrderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 			}
 		case xml.EndElement:
 			var v T
-			if t.Name.Space == RDFNameSpace && t.Name.Local == "li" {
+			if t.Name.Space == RDFNamespace && t.Name.Local == "li" {
 				childLevel--
 				if childLevel == 0 {
 					val, err := v.DecodeAnother(tokens[childStart:i])
@@ -296,7 +296,7 @@ func (OrderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 					}
 					res.Values = append(res.Values, val.(T))
 				}
-			} else if insideBag && childLevel == 0 && t.Name.Space == RDFNameSpace && t.Name.Local == "Bag" {
+			} else if insideBag && childLevel == 0 && t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
 				insideBag = false
 			} else {
 				return nil, errMalformedXMP

@@ -58,15 +58,15 @@ tokenLoop:
 
 		switch t := t.(type) {
 		case xml.StartElement:
-			if level > 0 || t.Name.Space == RDFNameSpace && t.Name.Local == "RDF" {
+			if level > 0 || t.Name.Space == RDFNamespace && t.Name.Local == "RDF" {
 				level++
 			} else {
 				continue tokenLoop
 			}
-			if descriptionLevel < 0 && t.Name.Space == RDFNameSpace && t.Name.Local == "Description" {
+			if descriptionLevel < 0 && t.Name.Space == RDFNamespace && t.Name.Local == "Description" {
 				var about string
 				for _, a := range t.Attr {
-					if a.Name.Space == RDFNameSpace && a.Name.Local == "about" {
+					if a.Name.Space == RDFNamespace && a.Name.Local == "about" {
 						about = a.Value
 						break
 					}
@@ -91,7 +91,16 @@ tokenLoop:
 			if level == propertyLevel {
 				// propertyTokens contains the XML tokens which make up the property,
 				// including the start element (but not the end element).
-				propertyName := propertyTokens[0].(xml.StartElement).Name.Local
+
+				start := propertyTokens[0].(xml.StartElement)
+				for _, a := range start.Attr {
+					if a.Name == nameXMLLang {
+						lang := a.Value
+						fmt.Println(start, lang)
+					}
+				}
+
+				propertyName := start.Name.Local
 				info, ok := modelReaders[propertyNS]
 				update := updateGeneric
 				if ok {
@@ -118,3 +127,8 @@ tokenLoop:
 	}
 	return p, nil
 }
+
+var (
+	nameXMLLang        = xml.Name{Space: xmlNamespace, Local: "lang"}
+	nameRDFDescription = xml.Name{Space: RDFNamespace, Local: "Description"}
+)
