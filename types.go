@@ -20,6 +20,8 @@ import (
 	"encoding/xml"
 	"errors"
 	"time"
+
+	"golang.org/x/text/language"
 )
 
 // Text represents a simple text value.
@@ -125,6 +127,38 @@ func (Date) DecodeAnother(tokens []xml.Token) (Value, error) {
 		}
 	}
 	return nil, errMalformedXMP
+}
+
+// Locale represents an RFC 3066 language code.
+type Locale struct {
+	Language language.Tag
+	Q
+}
+
+// IsZero implements the [Value] interface.
+func (l Locale) IsZero() bool {
+	return l.Language == language.Und
+}
+
+// EncodeXMP implements the [Value] interface.
+func (l Locale) EncodeXMP(e *Encoder) error {
+	token := xml.CharData(l.Language.String())
+	return e.EncodeToken(token)
+}
+
+// DecodeAnother implements the [Value] interface.
+func (l Locale) DecodeAnother(tokens []xml.Token) (Value, error) {
+	var text string
+	for _, token := range tokens {
+		switch token := token.(type) {
+		case xml.CharData:
+			text += string(token)
+		case xml.StartElement, xml.EndElement:
+			return nil, errMalformedXMP
+		}
+	}
+	tag, _ := language.Parse(text)
+	return Locale{Language: tag}, nil
 }
 
 // UnorderedArray represents an unordered array of values.
