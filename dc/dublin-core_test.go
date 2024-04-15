@@ -35,7 +35,7 @@ func TestDublinCore(t *testing.T) {
 	}
 
 	packet := &xmp.Packet{
-		Properties: map[string]xmp.Model{
+		Models: map[string]xmp.Model{
 			"http://purl.org/dc/elements/1.1/": &dc,
 		},
 	}

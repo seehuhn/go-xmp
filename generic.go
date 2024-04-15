@@ -1,0 +1,91 @@
+// seehuhn.de/go/xmp - Extensible Metadata Platform in Go
+// Copyright (C) 2024  Jochen Voss <voss@seehuhn.de>
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+package xmp
+
+import "encoding/xml"
+
+type genericModel struct {
+	nameSpace  string
+	properties map[string]genericValue
+}
+
+func (g *genericModel) NameSpaces(m map[string]struct{}) map[string]struct{} {
+	if m == nil {
+		m = make(map[string]struct{})
+	}
+
+	m[g.nameSpace] = struct{}{}
+	for _, value := range g.properties {
+		m = value.NameSpaces(m)
+	}
+
+	return m
+}
+
+func (g *genericModel) EncodeXMP(e *Encoder, prefix string) error {
+	panic("not implemented")
+}
+
+type genericValue struct {
+	Tokens []xml.Token
+	Q
+}
+
+func (v genericValue) IsZero() bool {
+	return false
+}
+
+func (v genericValue) NameSpaces(m map[string]struct{}) map[string]struct{} {
+	m = v.Q.NameSpaces(m)
+	for _, token := range v.Tokens {
+		switch token := token.(type) {
+		case xml.StartElement:
+			m[token.Name.Space] = struct{}{}
+		}
+	}
+	return m
+}
+
+func (v genericValue) EncodeXMP(e *Encoder) error {
+	for _, token := range v.Tokens {
+		err := e.EncodeToken(token)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (v genericValue) DecodeAnother(tokens []xml.Token) (Value, error) {
+	return genericValue{Tokens: tokens}, nil
+}
+
+func updateGeneric(m Model, name string, tokens []xml.Token) (Model, error) {
+	var g *genericModel
+	if m, ok := m.(*genericModel); ok {
+		g = m
+	} else {
+		g = &genericModel{
+			properties: make(map[string]genericValue),
+		}
+	}
+
+	value := genericValue{Tokens: tokens}
+	g.properties[name] = value
+
+	return g, nil
+}

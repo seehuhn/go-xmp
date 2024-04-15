@@ -36,7 +36,7 @@ func ReadFile(filename string) (*Packet, error) {
 func Read(r io.Reader) (*Packet, error) {
 	dec := xml.NewDecoder(r)
 	p := &Packet{
-		Properties: make(map[string]Model),
+		Models: make(map[string]Model),
 	}
 
 	var level int
@@ -86,24 +86,17 @@ tokenLoop:
 			}
 		case xml.EndElement:
 			if level == propertyLevel {
-				// We don't append the trailing EndElement, because it doesn't
-				// contain any useful information.  In contrast, the leading
-				// StartElement is required because it contains the property
-				// name.
+				propertyName := propertyTokens[0].(xml.StartElement).Name.Local
 				info, ok := modelReaders[propertyNS]
+				update := updateGeneric
 				if ok {
-					model, err := info.update(p.Properties[propertyNS], propertyTokens)
-					if err != nil {
-						return nil, err
-					}
-					p.Properties[propertyNS] = model
-				} else {
-					fmt.Println(propertyNS)
-					for _, t := range propertyTokens {
-						fmt.Println(".", t)
-					}
-					fmt.Println()
+					update = info.update
 				}
+				model, err := update(p.Models[propertyNS], propertyName, propertyTokens[1:])
+				if err != nil {
+					return nil, err
+				}
+				p.Models[propertyNS] = model
 				propertyLevel = -1
 			}
 			if level == descriptionLevel {

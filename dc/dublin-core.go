@@ -83,24 +83,23 @@ func (dc *DublinCore) NameSpaces(m map[string]struct{}) map[string]struct{} {
 	return m
 }
 
-func updateDublinCore(m xmp.Model, tokens []xml.Token) (xmp.Model, error) {
+func updateDublinCore(m xmp.Model, name string, tokens []xml.Token) (xmp.Model, error) {
 	var dc *DublinCore
-	if m != nil {
-		dc = m.(*DublinCore)
+	if m, ok := m.(*DublinCore); ok {
+		dc = m
 	} else {
 		dc = &DublinCore{}
 	}
 
-	propertyName := tokens[0].(xml.StartElement).Name.Local
-	switch propertyName {
+	switch name {
 	case "contributor":
-		v, err := dc.Contributor.DecodeAnother(tokens[1:])
+		v, err := dc.Contributor.DecodeAnother(tokens)
 		if err != nil {
 			return nil, err
 		}
 		dc.Contributor = v.(xmp.UnorderedArray[xmp.ProperName])
 	case "coverage":
-		v, err := dc.Coverage.DecodeAnother(tokens[1:])
+		v, err := dc.Coverage.DecodeAnother(tokens)
 		if err != nil {
 			return nil, err
 		}

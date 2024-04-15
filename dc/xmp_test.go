@@ -36,5 +36,5 @@ func TestXMP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fmt.Printf("%#v\n", p.Properties[NameSpace])
+	fmt.Printf("%#v\n", p.Models[NameSpace])
 }

@@ -68,8 +68,8 @@ func (q Q) NameSpaces(m map[string]struct{}) map[string]struct{} {
 
 // Packet represents an XMP packet.
 type Packet struct {
-	// Properties maps namespaces to models.
-	Properties map[string]Model
+	// Models maps namespaces to models.
+	Models map[string]Model
 
 	// About (optional) is the URL of the resource described by the XMP packet.
 	About *url.URL
@@ -81,14 +81,14 @@ func (p *Packet) Encode() ([]byte, error) {
 		return nil, err
 	}
 
-	namespaces := maps.Keys(p.Properties)
+	namespaces := maps.Keys(p.Models)
 	sort.Strings(namespaces)
 	about := ""
 	if p.About != nil {
 		about = p.About.String()
 	}
 	for _, ns := range namespaces {
-		model := p.Properties[ns]
+		model := p.Models[ns]
 
 		var attrs []xml.Attr
 		attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "about"}, Value: about})
@@ -127,7 +127,7 @@ func (p *Packet) Encode() ([]byte, error) {
 }
 
 // RegisterModel registers a model reader for a given namespace.
-func RegisterModel(nameSpace, defaultLocal string, update func(Model, []xml.Token) (Model, error)) {
+func RegisterModel(nameSpace, defaultLocal string, update func(Model, string, []xml.Token) (Model, error)) {
 	modelMutex.Lock()
 	defer modelMutex.Unlock()
 	modelReaders[nameSpace] = &modelInfo{nameSpace, defaultLocal, update}
@@ -155,7 +155,7 @@ func nsPrefix(ns string) string {
 
 type modelInfo struct {
 	nameSpace, defaultLocal string
-	update                  func(Model, []xml.Token) (Model, error)
+	update                  func(Model, string, []xml.Token) (Model, error)
 }
 
 var (
