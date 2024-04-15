@@ -1,0 +1,8 @@
+encoder.go
+==========
+
+The code for generating namespace prefixes is taken from the files
+encoding/xml/marshal.go and encoding/xml/xml.go in the Go standard library.
+
+Use of this source code is governed by a BSD-style
+license that can be found in the LICENSE file.
