@@ -19,11 +19,73 @@ package xmp
 import (
 	"bytes"
 	"encoding/xml"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/exp/maps"
 )
+
+// Encode encodes the packet to an XML byte slice.
+func (p *Packet) Encode() ([]byte, error) {
+	e, err := NewEncoder()
+	if err != nil {
+		return nil, err
+	}
+
+	namespaces := maps.Keys(p.Models)
+	sort.Strings(namespaces)
+	about := ""
+	if p.About != nil {
+		about = p.About.String()
+	}
+	for _, ns := range namespaces {
+		model := p.Models[ns]
+
+		var attrs []xml.Attr
+		attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "about"}, Value: about})
+
+		m := make(map[string]struct{})
+		m[ns] = struct{}{}
+		model.NameSpaces(m)
+		for ns := range m {
+			_, ok := e.nsPrefix[ns]
+			if !ok {
+				// TODO(voss): how to rewind this once the environment is closed?
+				pfx := e.addNamespace(ns)
+				attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "xmlns:" + pfx}, Value: ns})
+			}
+		}
+		err := e.EncodeToken(xml.StartElement{
+			Name: e.makeName(RDFNamespace, "Description"),
+			Attr: attrs,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		err = model.EncodeXMP(e, ns)
+		if err != nil {
+			return nil, err
+		}
+
+		err = e.EncodeToken(xml.EndElement{
+			Name: e.makeName(RDFNamespace, "Description"),
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = e.Close()
+	if err != nil {
+		return nil, err
+	}
+
+	return e.buf.Bytes(), nil
+}
 
 // An Encoder writes XMP data to an output stream.
 type Encoder struct {

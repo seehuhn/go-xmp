@@ -52,6 +52,14 @@ type genericValue struct {
 	Q
 }
 
+func decodeGenericValue(tokens []xml.Token, qq []Qualifier) (Value, error) {
+	val := genericValue{
+		Tokens: tokens,
+		Q:      qq,
+	}
+	return val, nil
+}
+
 func (v genericValue) IsZero() bool {
 	return false
 }
@@ -76,11 +84,7 @@ func (v genericValue) EncodeXMP(e *Encoder) error {
 	return nil
 }
 
-func (v genericValue) DecodeAnother(tokens []xml.Token) (Value, error) {
-	return genericValue{Tokens: tokens}, nil
-}
-
-func updateGeneric(m Model, name string, tokens []xml.Token) (Model, error) {
+func updateGeneric(m Model, name string, tokens []xml.Token, qq []Qualifier) (Model, error) {
 	var g *genericModel
 	if m, ok := m.(*genericModel); ok {
 		g = m
@@ -90,7 +94,10 @@ func updateGeneric(m Model, name string, tokens []xml.Token) (Model, error) {
 		}
 	}
 
-	value := genericValue{Tokens: tokens}
+	value := genericValue{
+		Tokens: tokens,
+		Q:      qq,
+	}
 	g.Properties[name] = value
 
 	return g, nil

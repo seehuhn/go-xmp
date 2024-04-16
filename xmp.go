@@ -19,10 +19,7 @@ package xmp
 import (
 	"encoding/xml"
 	"net/url"
-	"sort"
 	"sync"
-
-	"golang.org/x/exp/maps"
 )
 
 // Model is a group of XMP properties.
@@ -78,69 +75,6 @@ type Packet struct {
 	About *url.URL
 }
 
-// Encode encodes the packet to an XML byte slice.
-func (p *Packet) Encode() ([]byte, error) {
-	e, err := NewEncoder()
-	if err != nil {
-		return nil, err
-	}
-
-	namespaces := maps.Keys(p.Models)
-	sort.Strings(namespaces)
-	about := ""
-	if p.About != nil {
-		about = p.About.String()
-	}
-	for _, ns := range namespaces {
-		model := p.Models[ns]
-
-		var attrs []xml.Attr
-		attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "about"}, Value: about})
-
-		m := make(map[string]struct{})
-		m[ns] = struct{}{}
-		model.NameSpaces(m)
-		for ns := range m {
-			_, ok := e.nsPrefix[ns]
-			if !ok {
-				// TODO(voss): how to rewind this once the environment is closed?
-				pfx := e.addNamespace(ns)
-				attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "xmlns:" + pfx}, Value: ns})
-			}
-		}
-		err := e.EncodeToken(xml.StartElement{
-			Name: e.makeName(RDFNamespace, "Description"),
-			Attr: attrs,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		err = model.EncodeXMP(e, ns)
-		if err != nil {
-			return nil, err
-		}
-
-		err = e.EncodeToken(xml.EndElement{
-			Name: e.makeName(RDFNamespace, "Description"),
-		})
-	}
-
-	err = e.Close()
-	if err != nil {
-		return nil, err
-	}
-
-	return e.buf.Bytes(), nil
-}
-
-// RegisterModel registers a model reader for a given namespace.
-func RegisterModel(nameSpace, defaultLocal string, update func(Model, string, []xml.Token) (Model, error)) {
-	modelMutex.Lock()
-	defer modelMutex.Unlock()
-	modelReaders[nameSpace] = &modelInfo{nameSpace, defaultLocal, update}
-}
-
 func nsPrefix(ns string) string {
 	modelMutex.Lock()
 	info, ok := modelReaders[ns]
@@ -158,11 +92,50 @@ func nsPrefix(ns string) string {
 }
 
 type modelInfo struct {
-	nameSpace, defaultLocal string
-	update                  func(Model, string, []xml.Token) (Model, error)
+	defaultLocal string
+	update       func(Model, string, []xml.Token, []Qualifier) (Model, error)
+}
+
+// RegisterModel registers a model reader for a given namespace.
+func RegisterModel(nameSpace, defaultLocal string, update func(Model, string, []xml.Token, []Qualifier) (Model, error)) {
+	modelMutex.Lock()
+	defer modelMutex.Unlock()
+	modelReaders[nameSpace] = &modelInfo{defaultLocal, update}
+}
+
+func getModelUpdater(ns string) func(Model, string, []xml.Token, []Qualifier) (Model, error) {
+	update := updateGeneric
+
+	modelMutex.Lock()
+	defer modelMutex.Unlock()
+	if info, ok := modelReaders[ns]; ok {
+		update = info.update
+	}
+
+	return update
+}
+
+// RegisterQualifier registers decoder for the qualifier with the given name.
+func RegisterQualifier(name xml.Name, decode func([]xml.Token, []Qualifier) (Value, error)) {
+	modelMutex.Lock()
+	defer modelMutex.Unlock()
+	qualifierDecoders[name] = decode
+}
+
+func getQualifierDecoder(name xml.Name) func([]xml.Token, []Qualifier) (Value, error) {
+	reader := decodeGenericValue
+
+	modelMutex.Lock()
+	defer modelMutex.Unlock()
+	if read, ok := qualifierDecoders[name]; ok {
+		reader = read
+	}
+
+	return reader
 }
 
 var (
-	modelReaders = make(map[string]*modelInfo)
-	modelMutex   sync.Mutex
+	modelMutex        sync.Mutex
+	modelReaders      = make(map[string]*modelInfo)
+	qualifierDecoders = make(map[xml.Name]func([]xml.Token, []Qualifier) (Value, error))
 )

@@ -31,8 +31,8 @@ type Text struct {
 }
 
 // DecodeText decodes a simple text value.
-func DecodeText(tokens []xml.Token) (Text, error) {
-	var res Text
+func DecodeText(tokens []xml.Token, qq []Qualifier) (Text, error) {
+	res := Text{Q: qq}
 	for _, token := range tokens {
 		switch token := token.(type) {
 		case xml.CharData:
@@ -65,8 +65,9 @@ type ProperName struct {
 }
 
 // DecodeProperName decodes a proper name.
-func DecodeProperName(tokens []xml.Token) (ProperName, error) {
+func DecodeProperName(tokens []xml.Token, qq []Qualifier) (ProperName, error) {
 	var res ProperName
+	res.Q = qq
 	for _, token := range tokens {
 		switch token := token.(type) {
 		case xml.CharData:
@@ -86,7 +87,7 @@ type Date struct {
 }
 
 // DecodeDate decodes a date and time object.
-func DecodeDate(tokens []xml.Token) (Date, error) {
+func DecodeDate(tokens []xml.Token, qq []Qualifier) (Date, error) {
 	var dateString string
 	for _, token := range tokens {
 		switch token := token.(type) {
@@ -100,7 +101,12 @@ func DecodeDate(tokens []xml.Token) (Date, error) {
 	for i, format := range dateFormats {
 		t, err := time.Parse(format, dateString)
 		if err == nil {
-			return Date{Value: t, NumOmitted: i}, nil
+			val := Date{
+				Value:      t,
+				NumOmitted: i,
+				Q:          qq,
+			}
+			return val, nil
 		}
 	}
 	return Date{}, errMalformedXMP
@@ -136,7 +142,7 @@ type Locale struct {
 }
 
 // DecodeLocale decodes an RFC 3066 language code.
-func DecodeLocale(tokens []xml.Token) (Locale, error) {
+func DecodeLocale(tokens []xml.Token, qq []Qualifier) (Locale, error) {
 	var text string
 	for _, token := range tokens {
 		switch token := token.(type) {
@@ -147,7 +153,12 @@ func DecodeLocale(tokens []xml.Token) (Locale, error) {
 		}
 	}
 	tag, _ := language.Parse(text)
-	return Locale{Language: tag}, nil
+
+	val := Locale{
+		Language: tag,
+		Q:        qq,
+	}
+	return val, nil
 }
 
 // IsZero implements the [Value] interface.
@@ -168,8 +179,9 @@ type UnorderedArray[T Value] struct {
 }
 
 // DecodeUnorderedArray decodes an unordered array of values.
-func DecodeUnorderedArray[T Value](tokens []xml.Token, decodeItem func([]xml.Token) (T, error)) (UnorderedArray[T], error) {
-	var res UnorderedArray[T]
+func DecodeUnorderedArray[T Value](tokens []xml.Token, qq []Qualifier, decodeItem func([]xml.Token, []Qualifier) (T, error)) (UnorderedArray[T], error) {
+	res := UnorderedArray[T]{Q: qq}
+
 	insideBag := false
 	childLevel := 0
 	var childStart int
@@ -196,7 +208,7 @@ func DecodeUnorderedArray[T Value](tokens []xml.Token, decodeItem func([]xml.Tok
 			if t.Name.Space == RDFNamespace && t.Name.Local == "li" {
 				childLevel--
 				if childLevel == 0 {
-					val, err := decodeItem(tokens[childStart:i])
+					val, err := decodeItem(tokens[childStart:i], nil)
 					if err != nil {
 						return UnorderedArray[T]{}, err
 					}
@@ -260,8 +272,8 @@ type OrderedArray[T Value] struct {
 }
 
 // DecodeOrderedArray decodes an ordered array of values.
-func DecodeOrderedArray[T Value](tokens []xml.Token, decodeItem func([]xml.Token) (T, error)) (OrderedArray[T], error) {
-	var res OrderedArray[T]
+func DecodeOrderedArray[T Value](tokens []xml.Token, qq []Qualifier, decodeItem func([]xml.Token, []Qualifier) (T, error)) (OrderedArray[T], error) {
+	res := OrderedArray[T]{Q: qq}
 	insideBag := false
 	childLevel := 0
 	var childStart int
@@ -288,7 +300,7 @@ func DecodeOrderedArray[T Value](tokens []xml.Token, decodeItem func([]xml.Token
 			if t.Name.Space == RDFNamespace && t.Name.Local == "li" {
 				childLevel--
 				if childLevel == 0 {
-					val, err := decodeItem(tokens[childStart:i])
+					val, err := decodeItem(tokens[childStart:i], nil)
 					if err != nil {
 						return OrderedArray[T]{}, err
 					}

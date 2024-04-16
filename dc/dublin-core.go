@@ -120,7 +120,7 @@ func (dc *DublinCore) NameSpaces(m map[string]struct{}) {
 	m[xmp.RDFNamespace] = struct{}{}
 }
 
-func updateDublinCore(m xmp.Model, name string, tokens []xml.Token) (xmp.Model, error) {
+func updateDublinCore(m xmp.Model, name string, tokens []xml.Token, qq []xmp.Qualifier) (xmp.Model, error) {
 	var dc *DublinCore
 	if m, ok := m.(*DublinCore); ok {
 		dc = m
@@ -130,38 +130,38 @@ func updateDublinCore(m xmp.Model, name string, tokens []xml.Token) (xmp.Model, 
 
 	switch name {
 	case "contributor":
-		v, err := xmp.DecodeUnorderedArray(tokens, xmp.DecodeProperName)
+		v, err := xmp.DecodeUnorderedArray(tokens, qq, xmp.DecodeProperName)
 		if err != nil {
 			return nil, err
 		}
 		dc.Contributor = v
 	case "coverage":
-		v, err := xmp.DecodeText(tokens)
+		v, err := xmp.DecodeText(tokens, qq)
 		if err != nil {
 			return nil, err
 		}
 		dc.Coverage = v
 	case "creator":
-		v, err := xmp.DecodeOrderedArray(tokens, xmp.DecodeProperName)
+		v, err := xmp.DecodeOrderedArray(tokens, qq, xmp.DecodeProperName)
 		if err != nil {
 			return nil, err
 		}
 		dc.Creator = v
 	case "date":
-		v, err := xmp.DecodeOrderedArray(tokens, xmp.DecodeDate)
+		v, err := xmp.DecodeOrderedArray(tokens, qq, xmp.DecodeDate)
 		if err != nil {
 			return nil, err
 		}
 		dc.Date = v
 
 	case "source":
-		v, err := xmp.DecodeText(tokens)
+		v, err := xmp.DecodeText(tokens, qq)
 		if err != nil {
 			return nil, err
 		}
 		dc.Source = v
 	case "subject":
-		v, err := xmp.DecodeUnorderedArray(tokens, xmp.DecodeText)
+		v, err := xmp.DecodeUnorderedArray(tokens, qq, xmp.DecodeText)
 		if err != nil {
 			return nil, err
 		}

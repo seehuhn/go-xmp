@@ -151,10 +151,31 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 				// These are not allowed in XMP, and we simply ignore them.
 			default:
 				tokens := []xml.Token{xml.CharData(a.Value)}
-				_ = tokens
-				// TODO(voss): implement this
+				dec := getQualifierDecoder(a.Name)
+				val, err := dec(tokens, nil)
+				if err != nil {
+					// we ignore malformed qualifiers
+				} else {
+					q := Qualifier{
+						Name:  a.Name,
+						Value: val,
+					}
+					qq = append(qq, q)
+				}
 			}
 		}
+
+		propertyNS := start.Name.Space
+		update := getModelUpdater(propertyNS)
+		propertyName := start.Name.Local
+		model, err := update(p.Models[propertyNS], propertyName, tokens, qq)
+		if err != nil {
+			// TODO(voss): ignore malformed properties?
+			return err
+		}
+		p.Models[propertyNS] = model
+
+		return nil
 
 	case resourcePropertyElt:
 		// A resourcePropertyElt most commonly represents an XMP struct or
@@ -188,14 +209,9 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 	}
 
 	propertyNS := start.Name.Space
-
+	update := getModelUpdater(propertyNS)
 	propertyName := start.Name.Local
-	info, ok := modelReaders[propertyNS]
-	update := updateGeneric
-	if ok {
-		update = info.update
-	}
-	model, err := update(p.Models[propertyNS], propertyName, tokens)
+	model, err := update(p.Models[propertyNS], propertyName, tokens, nil)
 	if err != nil {
 		return err
 	}
