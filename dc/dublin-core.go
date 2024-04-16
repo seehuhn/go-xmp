@@ -130,42 +130,42 @@ func updateDublinCore(m xmp.Model, name string, tokens []xml.Token) (xmp.Model, 
 
 	switch name {
 	case "contributor":
-		v, err := dc.Contributor.DecodeAnother(tokens)
+		v, err := xmp.DecodeUnorderedArray(tokens, xmp.DecodeProperName)
 		if err != nil {
 			return nil, err
 		}
-		dc.Contributor = v.(xmp.UnorderedArray[xmp.ProperName])
+		dc.Contributor = v
 	case "coverage":
-		v, err := dc.Coverage.DecodeAnother(tokens)
+		v, err := xmp.DecodeText(tokens)
 		if err != nil {
 			return nil, err
 		}
-		dc.Coverage = v.(xmp.Text)
+		dc.Coverage = v
 	case "creator":
-		v, err := dc.Creator.DecodeAnother(tokens)
+		v, err := xmp.DecodeOrderedArray(tokens, xmp.DecodeProperName)
 		if err != nil {
 			return nil, err
 		}
-		dc.Creator = v.(xmp.OrderedArray[xmp.ProperName])
+		dc.Creator = v
 	case "date":
-		v, err := dc.Date.DecodeAnother(tokens)
+		v, err := xmp.DecodeOrderedArray(tokens, xmp.DecodeDate)
 		if err != nil {
 			return nil, err
 		}
-		dc.Date = v.(xmp.OrderedArray[xmp.Date])
+		dc.Date = v
 
 	case "source":
-		v, err := dc.Source.DecodeAnother(tokens)
+		v, err := xmp.DecodeText(tokens)
 		if err != nil {
 			return nil, err
 		}
-		dc.Source = v.(xmp.Text)
+		dc.Source = v
 	case "subject":
-		v, err := dc.Subject.DecodeAnother(tokens)
+		v, err := xmp.DecodeUnorderedArray(tokens, xmp.DecodeText)
 		if err != nil {
 			return nil, err
 		}
-		dc.Subject = v.(xmp.UnorderedArray[xmp.Text])
+		dc.Subject = v
 
 	}
 

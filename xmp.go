@@ -44,7 +44,6 @@ type Value interface {
 	IsZero() bool
 	Qualifiers() []Qualifier
 	EncodeXMP(*Encoder) error
-	DecodeAnother([]xml.Token) (Value, error)
 }
 
 // A Qualifier can be used to attach additional information to a [Value].

@@ -30,6 +30,20 @@ type Text struct {
 	Q
 }
 
+// DecodeText decodes a simple text value.
+func DecodeText(tokens []xml.Token) (Text, error) {
+	var res Text
+	for _, token := range tokens {
+		switch token := token.(type) {
+		case xml.CharData:
+			res.Value += string(token)
+		case xml.StartElement, xml.EndElement:
+			return Text{}, errMalformedXMP
+		}
+	}
+	return res, nil
+}
+
 func (t Text) String() string {
 	return t.Value
 }
@@ -45,34 +59,20 @@ func (t Text) EncodeXMP(e *Encoder) error {
 	return e.EncodeToken(token)
 }
 
-// DecodeAnother implements the [Value] interface.
-func (Text) DecodeAnother(tokens []xml.Token) (Value, error) {
-	var res Text
-	for _, token := range tokens {
-		switch token := token.(type) {
-		case xml.CharData:
-			res.Value += string(token)
-		case xml.StartElement, xml.EndElement:
-			return nil, errMalformedXMP
-		}
-	}
-	return res, nil
-}
-
 // ProperName represents a proper name.
 type ProperName struct {
 	Text
 }
 
-// DecodeAnother implements the [Value] interface.
-func (ProperName) DecodeAnother(tokens []xml.Token) (Value, error) {
+// DecodeProperName decodes a proper name.
+func DecodeProperName(tokens []xml.Token) (ProperName, error) {
 	var res ProperName
 	for _, token := range tokens {
 		switch token := token.(type) {
 		case xml.CharData:
 			res.Value += string(token)
 		case xml.StartElement, xml.EndElement:
-			return nil, errMalformedXMP
+			return ProperName{}, errMalformedXMP
 		}
 	}
 	return res, nil
@@ -83,6 +83,27 @@ type Date struct {
 	Value      time.Time
 	NumOmitted int // 1=omit nano, 2=omit sec, 3=omit time, 4=omit day, 5=month
 	Q
+}
+
+// DecodeDate decodes a date and time object.
+func DecodeDate(tokens []xml.Token) (Date, error) {
+	var dateString string
+	for _, token := range tokens {
+		switch token := token.(type) {
+		case xml.CharData:
+			dateString += string(token)
+		case xml.StartElement, xml.EndElement:
+			return Date{}, errMalformedXMP
+		}
+	}
+
+	for i, format := range dateFormats {
+		t, err := time.Parse(format, dateString)
+		if err == nil {
+			return Date{Value: t, NumOmitted: i}, nil
+		}
+	}
+	return Date{}, errMalformedXMP
 }
 
 // IsZero implements the [Value] interface.
@@ -108,31 +129,25 @@ func (d Date) EncodeXMP(e *Encoder) error {
 	return e.EncodeToken(xml.CharData(d.Value.Format(format)))
 }
 
-// DecodeAnother implements the [Value] interface.
-func (Date) DecodeAnother(tokens []xml.Token) (Value, error) {
-	var dateString string
-	for _, token := range tokens {
-		switch token := token.(type) {
-		case xml.CharData:
-			dateString += string(token)
-		case xml.StartElement, xml.EndElement:
-			return nil, errMalformedXMP
-		}
-	}
-
-	for i, format := range dateFormats {
-		t, err := time.Parse(format, dateString)
-		if err == nil {
-			return Date{Value: t, NumOmitted: i}, nil
-		}
-	}
-	return nil, errMalformedXMP
-}
-
 // Locale represents an RFC 3066 language code.
 type Locale struct {
 	Language language.Tag
 	Q
+}
+
+// DecodeLocale decodes an RFC 3066 language code.
+func DecodeLocale(tokens []xml.Token) (Locale, error) {
+	var text string
+	for _, token := range tokens {
+		switch token := token.(type) {
+		case xml.CharData:
+			text += string(token)
+		case xml.StartElement, xml.EndElement:
+			return Locale{}, errMalformedXMP
+		}
+	}
+	tag, _ := language.Parse(text)
+	return Locale{Language: tag}, nil
 }
 
 // IsZero implements the [Value] interface.
@@ -146,25 +161,55 @@ func (l Locale) EncodeXMP(e *Encoder) error {
 	return e.EncodeToken(token)
 }
 
-// DecodeAnother implements the [Value] interface.
-func (l Locale) DecodeAnother(tokens []xml.Token) (Value, error) {
-	var text string
-	for _, token := range tokens {
-		switch token := token.(type) {
-		case xml.CharData:
-			text += string(token)
-		case xml.StartElement, xml.EndElement:
-			return nil, errMalformedXMP
-		}
-	}
-	tag, _ := language.Parse(text)
-	return Locale{Language: tag}, nil
-}
-
 // UnorderedArray represents an unordered array of values.
 type UnorderedArray[T Value] struct {
 	Values []T
 	Q
+}
+
+// DecodeUnorderedArray decodes an unordered array of values.
+func DecodeUnorderedArray[T Value](tokens []xml.Token, decodeItem func([]xml.Token) (T, error)) (UnorderedArray[T], error) {
+	var res UnorderedArray[T]
+	insideBag := false
+	childLevel := 0
+	var childStart int
+	for i, t := range tokens {
+		// An unordered array is encoded as a sequence of <rdf:li> elements, inside
+		// an <rdf:Bag> element.  We ignore all other tokens (comments, etc).
+		switch t := t.(type) {
+		case xml.StartElement:
+			isLi := t.Name.Space == RDFNamespace && t.Name.Local == "li"
+			if childLevel > 0 {
+				// pass
+			} else if insideBag && childLevel == 0 && isLi {
+				childStart = i + 1
+			} else if t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
+				insideBag = true
+				res.Values = res.Values[:0]
+			} else {
+				return UnorderedArray[T]{}, errMalformedXMP
+			}
+			if isLi {
+				childLevel++
+			}
+		case xml.EndElement:
+			if t.Name.Space == RDFNamespace && t.Name.Local == "li" {
+				childLevel--
+				if childLevel == 0 {
+					val, err := decodeItem(tokens[childStart:i])
+					if err != nil {
+						return UnorderedArray[T]{}, err
+					}
+					res.Values = append(res.Values, val)
+				}
+			} else if insideBag && childLevel == 0 && t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
+				insideBag = false
+			} else {
+				return UnorderedArray[T]{}, errMalformedXMP
+			}
+		}
+	}
+	return res, nil
 }
 
 func (a UnorderedArray[T]) NameSpaces(m map[string]struct{}) {
@@ -208,9 +253,15 @@ func (a UnorderedArray[T]) EncodeXMP(e *Encoder) error {
 	return nil
 }
 
-// DecodeAnother implements the [Value] interface.
-func (UnorderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
-	var res UnorderedArray[T]
+// OrderedArray represents an ordered array of values.
+type OrderedArray[T Value] struct {
+	Values []T
+	Q
+}
+
+// DecodeOrderedArray decodes an ordered array of values.
+func DecodeOrderedArray[T Value](tokens []xml.Token, decodeItem func([]xml.Token) (T, error)) (OrderedArray[T], error) {
+	var res OrderedArray[T]
 	insideBag := false
 	childLevel := 0
 	var childStart int
@@ -228,36 +279,29 @@ func (UnorderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
 				insideBag = true
 				res.Values = res.Values[:0]
 			} else {
-				return nil, errMalformedXMP
+				return OrderedArray[T]{}, errMalformedXMP
 			}
 			if isLi {
 				childLevel++
 			}
 		case xml.EndElement:
-			var v T
 			if t.Name.Space == RDFNamespace && t.Name.Local == "li" {
 				childLevel--
 				if childLevel == 0 {
-					val, err := v.DecodeAnother(tokens[childStart:i])
+					val, err := decodeItem(tokens[childStart:i])
 					if err != nil {
-						return nil, err
+						return OrderedArray[T]{}, err
 					}
-					res.Values = append(res.Values, val.(T))
+					res.Values = append(res.Values, val)
 				}
 			} else if insideBag && childLevel == 0 && t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
 				insideBag = false
 			} else {
-				return nil, errMalformedXMP
+				return OrderedArray[T]{}, errMalformedXMP
 			}
 		}
 	}
 	return res, nil
-}
-
-// OrderedArray represents an ordered array of values.
-type OrderedArray[T Value] struct {
-	Values []T
-	Q
 }
 
 func (a OrderedArray[T]) IsZero() bool {
@@ -292,52 +336,6 @@ func (a OrderedArray[T]) EncodeXMP(e *Encoder) error {
 		return err
 	}
 	return nil
-}
-
-// DecodeAnother implements the [Value] interface.
-func (OrderedArray[T]) DecodeAnother(tokens []xml.Token) (Value, error) {
-	var res OrderedArray[T]
-	insideBag := false
-	childLevel := 0
-	var childStart int
-	for i, t := range tokens {
-		// An unordered array is encoded as a sequence of <rdf:li> elements, inside
-		// an <rdf:Bag> element.  We ignore all other tokens (comments, etc).
-		switch t := t.(type) {
-		case xml.StartElement:
-			isLi := t.Name.Space == RDFNamespace && t.Name.Local == "li"
-			if childLevel > 0 {
-				// pass
-			} else if insideBag && childLevel == 0 && isLi {
-				childStart = i + 1
-			} else if t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
-				insideBag = true
-				res.Values = res.Values[:0]
-			} else {
-				return nil, errMalformedXMP
-			}
-			if isLi {
-				childLevel++
-			}
-		case xml.EndElement:
-			var v T
-			if t.Name.Space == RDFNamespace && t.Name.Local == "li" {
-				childLevel--
-				if childLevel == 0 {
-					val, err := v.DecodeAnother(tokens[childStart:i])
-					if err != nil {
-						return nil, err
-					}
-					res.Values = append(res.Values, val.(T))
-				}
-			} else if insideBag && childLevel == 0 && t.Name.Space == RDFNamespace && t.Name.Local == "Bag" {
-				insideBag = false
-			} else {
-				return nil, errMalformedXMP
-			}
-		}
-	}
-	return res, nil
 }
 
 var (
