@@ -69,6 +69,9 @@ tokenLoop:
 			}
 			if descriptionLevel < 0 && t.Name == elemRDFDescription {
 				for _, a := range t.Attr {
+					if a.Name.Space == "xmlns" {
+						continue
+					}
 					switch a.Name {
 					case attrRDFAbout:
 						aboutURL, _ := url.Parse(a.Value)
@@ -175,7 +178,7 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 		}
 		p.Models[propertyNS] = model
 
-		return nil
+		return nil // TODO(voss): remove once all cases are implemented
 
 	case resourcePropertyElt:
 		// A resourcePropertyElt most commonly represents an XMP struct or
@@ -183,6 +186,17 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 		// qualifiers (other than xml:lang as an attribute).
 		//
 		// See appendix C.2.6 (The resourcePropertyElt) of ISO 16684-1:2011.
+
+		// shortStruct := false
+		// var structFieldTokens []xml.Token
+		// for _, a := range start.Attr {
+		// 	if a.Name == attrRDFParseType && a.Value == "Resource" {
+		// 		// Short form of a struct property.
+		// 		// See section 7.9.2.3.
+		// 		shortStruct = true
+		// 		break
+		// 	}
+		// }
 
 	case parseTypeResourcePropertyElt:
 		// A parseTypeResourcePropertyElt is a form of shorthand that replaces

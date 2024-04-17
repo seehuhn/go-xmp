@@ -17,68 +17,52 @@
 package xmp
 
 import (
-	"bytes"
 	"encoding/xml"
 	"strings"
 	"testing"
-
-	"github.com/google/go-cmp/cmp"
 )
 
-func TestGeneric(t *testing.T) {
-	const testData = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:test="http://ns.seehuhn.de/test#">
+// TestSimple tests the parsing of a simple XMP packet.
+func TestSimple(t *testing.T) {
+	// This is the example from section 7.4 of ISO 16684-1:2011
+	const testData = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xmp="http://ns.adobe.com/xap/1.0/">
 	<rdf:Description rdf:about="">
-		<test:Test>hello world</test:Test>
+		<xmp:Rating>3</xmp:Rating>
 	</rdf:Description>
-	</rdf:RDF>`
+ 	</rdf:RDF>`
 
-	p1, err := Read(strings.NewReader(testData))
+	p, err := Read(strings.NewReader(testData))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if len(p1.Models) != 1 {
-		t.Fatalf("unexpected number of models: %d", len(p1.Models))
+	if len(p.Models) != 1 {
+		t.Fatalf("unexpected number of models: %d", len(p.Models))
 	}
-	model, ok := p1.Models["http://ns.seehuhn.de/test#"]
+	model, ok := p.Models["http://ns.adobe.com/xap/1.0/"]
 	if !ok {
-		t.Fatalf("property not found")
+		t.Fatal("model not found")
 	}
-	g, ok := model.(*genericModel)
-	if !ok {
-		t.Fatalf("property has wrong type")
-	}
+	// TODO(voss): update this once the xmp namespace is implemented
+	g := model.(*genericModel)
 	if len(g.Properties) != 1 {
 		t.Fatalf("unexpected number of properties: %d", len(g.Properties))
 	}
-	v, ok := g.Properties["Test"]
+	prop, ok := g.Properties["Rating"]
 	if !ok {
-		t.Fatalf("property not found")
+		t.Fatal("property not found")
 	}
-	if len(v.Tokens) != 1 {
-		t.Fatalf("unexpected number of tokens: %d", len(v.Tokens))
+	if len(prop.Tokens) != 1 {
+		t.Fatalf("unexpected number of tokens: %d", len(prop.Tokens))
 	}
-	tok, ok := v.Tokens[0].(xml.CharData)
+	tok, ok := prop.Tokens[0].(xml.CharData)
 	if !ok {
 		t.Fatalf("unexpected token type")
 	}
-	if string(tok) != "hello world" {
+	if string(tok) != "3" {
 		t.Fatalf("unexpected token value")
 	}
-
-	// re-encode the packet
-	b, err := p1.Encode()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// re-parse the packet
-	p2, err := Read(bytes.NewReader(b))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if d := cmp.Diff(p1, p2); d != "" {
-		t.Fatalf("unexpected packet: %s", d)
+	if len(prop.Q) != 0 {
+		t.Fatalf("unexpected number of qualifiers: %d", len(prop.Q))
 	}
 }

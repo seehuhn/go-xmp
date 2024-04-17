@@ -45,7 +45,7 @@ func (p *Packet) Encode() ([]byte, error) {
 		model := p.Models[ns]
 
 		var attrs []xml.Attr
-		attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "about"}, Value: about})
+		attrs = append(attrs, xml.Attr{Name: e.makeName(RDFNamespace, "about"), Value: about})
 
 		m := make(map[string]struct{})
 		m[ns] = struct{}{}
@@ -215,7 +215,7 @@ func (e *Encoder) addNamespace(ns string) string {
 
 		// Pick a name. We try to use the final element of the path
 		// but fall back to _.
-		prefix = strings.TrimRight(ns, "/")
+		prefix = strings.TrimRight(ns, "/#")
 		if i := strings.LastIndex(prefix, "/"); i >= 0 {
 			prefix = prefix[i+1:]
 		}
