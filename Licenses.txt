@@ -1,8 +1,20 @@
-encoder.go
-==========
+jvxml
+=====
 
-The code for generating namespace prefixes is taken from the files
-encoding/xml/marshal.go and encoding/xml/xml.go in the Go standard library.
+This is a modified version of part of the Go standard library's encoding/xml
+package.
 
-Use of this source code is governed by a BSD-style
-license that can be found in the LICENSE file.
+Original license notice: "Use of this source code is governed by a BSD-style
+license that can be found in the LICENSE file." This refers to the LICENSE file
+in the Go source distribution, which is reproduced in the file jvxml/LICENSE.
+
+
+ns.go
+=====
+
+The code for generating namespace prefixes is taken from the file
+encoding/xml/encoder.go in the Go standard library.
+
+Original license notice: "Use of this source code is governed by a BSD-style
+license that can be found in the LICENSE file." This refers to the LICENSE file
+in the Go source distribution, which is reproduced in the file jvxml/LICENSE.

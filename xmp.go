@@ -19,28 +19,57 @@ package xmp
 import (
 	"encoding/xml"
 	"net/url"
-	"sync"
 )
 
-// Model is a group of XMP properties.
-type Model interface {
-	// NameSpaces populates the given map with all XML namespaces used by the
-	// properties of the model.  The namespace of the model itself will only be
-	// added to the map, if it is also used by a property.
-	NameSpaces(map[string]struct{})
+// Packet represents an XMP packet.
+type Packet struct {
+	// Properties maps namespaces to models.
+	Properties map[xml.Name]Value
 
-	// EncodeXMP encodes all the properties of the model to the given encoder.
-	// This does not include the enclosing rdf:Description element.
-	EncodeXMP(e *Encoder, prefix string) error
+	// About (optional) is the URL of the resource described by the XMP packet.
+	About *url.URL
+}
+
+func (p *Packet) getNamespaces() map[string]struct{} {
+	m := make(map[string]struct{})
+	for key, value := range p.Properties {
+		m[key.Space] = struct{}{}
+		getValueNameSpaces(m, value)
+	}
+	return m
+}
+
+func getValueNameSpaces(m map[string]struct{}, v Value) {
+	var q Q
+
+	switch v := v.(type) {
+	case textValue:
+		q = v.Q
+	case uriValue:
+		q = v.Q
+	case structValue:
+		for key, val := range v.val {
+			m[key.Space] = struct{}{}
+			getValueNameSpaces(m, val)
+		}
+		q = v.Q
+	case arrayValue:
+		for _, val := range v.val {
+			getValueNameSpaces(m, val)
+		}
+		q = v.Q
+	default:
+		panic("unexpected value type")
+	}
+
+	for _, q := range q {
+		getValueNameSpaces(m, q.Value)
+	}
 }
 
 // Value is the value of an XMP property.
 type Value interface {
-	NameSpaces(map[string]struct{})
-
-	IsZero() bool
 	Qualifiers() []Qualifier
-	EncodeXMP(*Encoder) error
 }
 
 // A Qualifier can be used to attach additional information to a [Value].
@@ -58,84 +87,33 @@ func (q Q) Qualifiers() []Qualifier {
 	return q
 }
 
-// NameSpaces implements part of the [Value] interface.
-func (q Q) NameSpaces(m map[string]struct{}) {
-	for _, q := range q {
-		m[q.Name.Space] = struct{}{}
-		q.Value.NameSpaces(m)
-	}
+// textValue represents a simple non-URI value.
+type textValue struct {
+	val string
+	Q
 }
 
-// Packet represents an XMP packet.
-type Packet struct {
-	// Models maps namespaces to models.
-	Models map[string]Model
-
-	// About (optional) is the URL of the resource described by the XMP packet.
-	About *url.URL
+// uriValue represents a simple URI value.
+type uriValue struct {
+	val *url.URL
+	Q
 }
 
-func nsPrefix(ns string) string {
-	modelMutex.Lock()
-	info, ok := modelReaders[ns]
-	modelMutex.Unlock()
-
-	var local string
-	if ok {
-		local = info.defaultLocal
-	}
-	if local == "" && ns == RDFNamespace {
-		local = "rdf"
-	}
-
-	return local
+type structValue struct {
+	val map[xml.Name]Value
+	Q
 }
 
-type modelInfo struct {
-	defaultLocal string
-	update       func(Model, string, []xml.Token, []Qualifier) (Model, error)
+type arrayValue struct {
+	val []Value
+	tp  arrayType
+	Q
 }
 
-// RegisterModel registers a model reader for a given namespace.
-func RegisterModel(nameSpace, defaultLocal string, update func(Model, string, []xml.Token, []Qualifier) (Model, error)) {
-	modelMutex.Lock()
-	defer modelMutex.Unlock()
-	modelReaders[nameSpace] = &modelInfo{defaultLocal, update}
-}
+type arrayType int
 
-func getModelUpdater(ns string) func(Model, string, []xml.Token, []Qualifier) (Model, error) {
-	update := updateGeneric
-
-	modelMutex.Lock()
-	defer modelMutex.Unlock()
-	if info, ok := modelReaders[ns]; ok {
-		update = info.update
-	}
-
-	return update
-}
-
-// RegisterQualifier registers decoder for the qualifier with the given name.
-func RegisterQualifier(name xml.Name, decode func([]xml.Token, []Qualifier) (Value, error)) {
-	modelMutex.Lock()
-	defer modelMutex.Unlock()
-	qualifierDecoders[name] = decode
-}
-
-func getQualifierDecoder(name xml.Name) func([]xml.Token, []Qualifier) (Value, error) {
-	reader := decodeGenericValue
-
-	modelMutex.Lock()
-	defer modelMutex.Unlock()
-	if read, ok := qualifierDecoders[name]; ok {
-		reader = read
-	}
-
-	return reader
-}
-
-var (
-	modelMutex        sync.Mutex
-	modelReaders      = make(map[string]*modelInfo)
-	qualifierDecoders = make(map[xml.Name]func([]xml.Token, []Qualifier) (Value, error))
+const (
+	tpUnordered arrayType = iota + 1
+	tpOrdered
+	tpAlternative
 )

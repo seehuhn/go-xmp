@@ -40,7 +40,7 @@ func ReadFile(filename string) (*Packet, error) {
 func Read(r io.Reader) (*Packet, error) {
 	dec := xml.NewDecoder(r)
 	p := &Packet{
-		Models: make(map[string]Model),
+		Properties: make(map[xml.Name]Value),
 	}
 
 	var level int
@@ -137,48 +137,23 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 		// the element become qualifiers in the XMP data model.
 		//
 		// See appendix C.2.7 (The literalPropertyElt) of ISO 16684-1:2011.
-		var qq Q
 		for _, a := range start.Attr {
 			switch a.Name {
 			case attrXMLLang:
 				langAttr, _ := language.Parse(a.Value)
 				if langAttr != language.Und {
-					val := Locale{Language: langAttr}
-					q := Qualifier{
-						Name:  attrXMLLang,
-						Value: val,
-					}
-					qq = append(qq, q)
+					panic("not implemented")
 				}
 			case attrXMLLang, attrRDFID, attrRDFID, attrRDFNodeID, attrRDFDataType:
 				// These are not allowed in XMP, and we simply ignore them.
 			default:
 				tokens := []xml.Token{xml.CharData(a.Value)}
-				dec := getQualifierDecoder(a.Name)
-				val, err := dec(tokens, nil)
-				if err != nil {
-					// we ignore malformed qualifiers
-				} else {
-					q := Qualifier{
-						Name:  a.Name,
-						Value: val,
-					}
-					qq = append(qq, q)
-				}
+				_ = tokens
+				panic("not implemented")
 			}
 		}
 
-		propertyNS := start.Name.Space
-		update := getModelUpdater(propertyNS)
-		propertyName := start.Name.Local
-		model, err := update(p.Models[propertyNS], propertyName, tokens, qq)
-		if err != nil {
-			// TODO(voss): ignore malformed properties?
-			return err
-		}
-		p.Models[propertyNS] = model
-
-		return nil // TODO(voss): remove once all cases are implemented
+		panic("not implemented")
 
 	case resourcePropertyElt:
 		// A resourcePropertyElt most commonly represents an XMP struct or
@@ -221,15 +196,6 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 		// Not allowed in XMP.  We simply ignore these.
 		return nil
 	}
-
-	propertyNS := start.Name.Space
-	update := getModelUpdater(propertyNS)
-	propertyName := start.Name.Local
-	model, err := update(p.Models[propertyNS], propertyName, tokens, nil)
-	if err != nil {
-		return err
-	}
-	p.Models[propertyNS] = model
 
 	return nil
 }
