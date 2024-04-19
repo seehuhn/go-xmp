@@ -27,10 +27,10 @@ import (
 )
 
 // Encode encodes the packet to an XML byte slice.
-func (p *Packet) Encode() ([]byte, error) {
+func (p *Packet) Encode(pretty bool) ([]byte, error) {
 	ns := p.getNamespaces()
 
-	e, err := newEncoder(p.About, ns)
+	e, err := newEncoder(p.About, ns, pretty)
 	if err != nil {
 		return nil, err
 	}
@@ -46,51 +46,10 @@ func (p *Packet) Encode() ([]byte, error) {
 	for _, name := range names {
 		value := p.Properties[name]
 
-		start := xml.StartElement{Name: e.makeName(name.Space, name.Local)}
-		var attr []xml.Attr
-		var tokens []xml.Token
-		end := xml.EndElement{Name: e.makeName(name.Space, name.Local)}
-
-		switch value := value.(type) {
-		case textValue:
-			tokens = append(tokens, xml.CharData(value.val))
-		case uriValue:
-			attr = append(attr, xml.Attr{
-				Name:  e.makeName(RDFNamespace, "resource"),
-				Value: value.val.String(),
-			})
-		}
-
-		for _, q := range value.Qualifiers() {
-			if q.Name == attrXMLLang {
-				panic("not implemented")
-				continue
-			}
-			panic("not implemented")
-		}
-
-		start.Attr = attr
-		if len(tokens) == 0 {
-			empty := jvxml.EmptyElement{
-				Name: start.Name,
-				Attr: start.Attr,
-			}
-			err = e.EncodeToken(empty)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			err = e.EncodeToken(start)
-			if err != nil {
-				return nil, err
-			}
-			for _, token := range tokens {
-				err = e.EncodeToken(token)
-				if err != nil {
-					return nil, err
-				}
-			}
-			err = e.EncodeToken(end)
+		propName := e.makeName(name.Space, name.Local)
+		tokens := e.appendProperty(nil, propName, value)
+		for _, t := range tokens {
+			err = e.EncodeToken(t)
 			if err != nil {
 				return nil, err
 			}
@@ -114,7 +73,7 @@ type encoder struct {
 }
 
 // newEncoder returns a new encoder that writes to w.
-func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}) (*encoder, error) {
+func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}, pretty bool) (*encoder, error) {
 	nsUsed[xmlNamespace] = struct{}{}
 	nsUsed[RDFNamespace] = struct{}{}
 
@@ -139,7 +98,9 @@ func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}) (*encoder, error)
 
 	buf := &bytes.Buffer{}
 	enc := jvxml.NewEncoder(buf)
-	enc.Indent("", "  ") // TODO(voss): remove?
+	if pretty {
+		enc.Indent("", "\t")
+	}
 	e := &encoder{
 		buf:        buf,
 		Encoder:    enc,
@@ -237,4 +198,88 @@ func (e *encoder) makeName(ns, local string) xml.Name {
 		panic("namespace not registered: " + ns)
 	}
 	return xml.Name{Local: pfx + ":" + local}
+}
+
+func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value) []xml.Token {
+	// leave a space for the StartElement
+	base := len(tokens)
+	tokens = append(tokens, nil)
+
+	var attr []xml.Attr
+
+	switch value := value.(type) {
+	case textValue:
+		tokens = append(tokens, xml.CharData(value.Value))
+	case uriValue:
+		attr = append(attr, xml.Attr{
+			Name:  e.makeName(RDFNamespace, "resource"),
+			Value: value.Value.String(),
+		})
+	case structValue:
+		envName := e.makeName(RDFNamespace, "Description")
+
+		fields := maps.Keys(value.Value)
+		sort.Slice(fields, func(i, j int) bool {
+			if fields[i].Space != fields[j].Space {
+				return fields[i].Space < fields[j].Space
+			}
+			return fields[i].Local < fields[j].Local
+		})
+
+		tokens = append(tokens, xml.StartElement{Name: envName})
+		for _, field := range fields {
+			fieldName := e.makeName(field.Space, field.Local)
+			fieldValue := value.Value[field]
+			tokens = e.appendProperty(tokens, fieldName, fieldValue)
+		}
+		tokens = append(tokens, xml.EndElement{Name: envName})
+	case arrayValue:
+		var tp string
+		switch value.Type {
+		case tpUnordered:
+			tp = "Bag"
+		case tpOrdered:
+			tp = "Seq"
+		case tpAlternative:
+			tp = "Alt"
+		default:
+			panic("unexpected array type")
+		}
+		envName := e.makeName(RDFNamespace, tp)
+		itemName := e.makeName(RDFNamespace, "li")
+
+		tokens = append(tokens, xml.StartElement{Name: envName})
+		for _, itemValue := range value.Value {
+			tokens = e.appendProperty(tokens, itemName, itemValue)
+		}
+		tokens = append(tokens, xml.EndElement{Name: envName})
+	default:
+		panic("unexpected value type")
+	}
+
+	for _, q := range value.Qualifiers() {
+		if q.Name == attrXMLLang {
+			attr = append(attr, xml.Attr{
+				Name:  e.makeName(xmlNamespace, "lang"),
+				Value: q.Value.(textValue).Value,
+			})
+			continue
+		}
+		panic("not implemented")
+	}
+
+	if len(tokens) > base+1 {
+		tokens[base] = xml.StartElement{
+			Name: name,
+			Attr: attr,
+		}
+		tokens = append(tokens, xml.EndElement{Name: name})
+	} else {
+		tokens[base] = jvxml.EmptyElement{
+			Name: name,
+			Attr: attr,
+		}
+	}
+
+	return tokens
 }

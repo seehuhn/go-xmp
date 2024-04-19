@@ -18,12 +18,11 @@ package xmp
 
 import (
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
-
-	"golang.org/x/text/language"
 )
 
 // ReadFile reads an XMP packet from a file.
@@ -86,9 +85,7 @@ tokenLoop:
 						// Property [...] elements that have non-URI simple,
 						// unqualified values may be replaced with attributes
 						// in the rdf:Description element.
-						start := xml.StartElement{Name: a.Name}
-						tokens := []xml.Token{xml.CharData(a.Value)}
-						p.parsePropertyElement(start, tokens)
+						p.Properties[a.Name] = textValue{Value: a.Value}
 					}
 				}
 				descriptionLevel = level
@@ -103,7 +100,10 @@ tokenLoop:
 				// including the start element, but not the end element.
 
 				start := propertyElement[0].(xml.StartElement)
-				p.parsePropertyElement(start, propertyElement[1:])
+				val, _ := parsePropertyElement(start, propertyElement[1:])
+				if val != nil {
+					p.Properties[start.Name] = val
+				}
 				propertyLevel = -1
 			}
 			if level == descriptionLevel {
@@ -128,7 +128,7 @@ tokenLoop:
 //
 // This implements the rules from appendix C.2.5 (Content of a nodeElement)
 // of ISO 16684-1:2011.
-func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token) error {
+func parsePropertyElement(start xml.StartElement, tokens []xml.Token) (Value, error) {
 	tp := getProperyElementType(start, tokens)
 	switch tp {
 	case literalPropertyElt:
@@ -137,41 +137,80 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 		// the element become qualifiers in the XMP data model.
 		//
 		// See appendix C.2.7 (The literalPropertyElt) of ISO 16684-1:2011.
+		var qq []Qualifier
 		for _, a := range start.Attr {
-			switch a.Name {
-			case attrXMLLang:
-				langAttr, _ := language.Parse(a.Value)
-				if langAttr != language.Und {
-					panic("not implemented")
-				}
-			case attrXMLLang, attrRDFID, attrRDFID, attrRDFNodeID, attrRDFDataType:
-				// These are not allowed in XMP, and we simply ignore them.
-			default:
-				tokens := []xml.Token{xml.CharData(a.Value)}
-				_ = tokens
-				panic("not implemented")
-			}
+			qq = append(qq, Qualifier{Name: a.Name, Value: textValue{Value: a.Value}})
 		}
 
-		panic("not implemented")
+		var text string
+		for _, t := range tokens {
+			if c, ok := t.(xml.CharData); ok {
+				text += string(c)
+			}
+		}
+		return textValue{Value: text, Q: qq}, nil
 
 	case resourcePropertyElt:
 		// A resourcePropertyElt most commonly represents an XMP struct or
 		// array property. It can also represent a property with general
 		// qualifiers (other than xml:lang as an attribute).
 		//
+		// A resourcePropertyElt can have an xml:lang attribute; it becomes an
+		// xml:lang qualifier on the XMP value represented by the
+		// resourcePropertyElt.
+		//
 		// See appendix C.2.6 (The resourcePropertyElt) of ISO 16684-1:2011.
+		var qq []Qualifier
+		for _, a := range start.Attr {
+			if a.Name != attrXMLLang {
+				continue
+			}
+			qq = append(qq, Qualifier{Name: a.Name, Value: textValue{Value: a.Value}})
+		}
 
-		// shortStruct := false
-		// var structFieldTokens []xml.Token
-		// for _, a := range start.Attr {
-		// 	if a.Name == attrRDFParseType && a.Value == "Resource" {
-		// 		// Short form of a struct property.
-		// 		// See section 7.9.2.3.
-		// 		shortStruct = true
-		// 		break
-		// 	}
-		// }
+		children := getChildElements(tokens)
+		switch {
+		case len(children) == 1 && children[0].name == elemRDFDescription:
+			inner := tokens[children[0].start+1 : children[0].end]
+			fields := getChildElements(inner)
+			res := structValue{
+				Value: make(map[xml.Name]Value, len(fields)),
+				Q:     qq,
+			}
+			for _, f := range fields {
+				val, _ := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end])
+				if val != nil {
+					res.Value[f.name] = val
+				}
+			}
+			return res, nil
+		case len(children) == 1 && (children[0].name == elemRDFBag || children[0].name == elemRDFSeq || children[0].name == elemRDFAlt):
+			var tp arrayType
+			switch children[0].name {
+			case elemRDFBag:
+				tp = tpUnordered
+			case elemRDFSeq:
+				tp = tpOrdered
+			case elemRDFAlt:
+				tp = tpAlternative
+			}
+			inner := tokens[children[0].start+1 : children[0].end]
+			items := getChildElements(inner)
+			res := arrayValue{
+				Value: make([]Value, 0, len(items)),
+				Type:  tp,
+				Q:     qq,
+			}
+			for _, i := range items {
+				val, _ := parsePropertyElement(inner[i.start].(xml.StartElement), inner[i.start+1:i.end])
+				if val != nil {
+					res.Value = append(res.Value, val)
+				}
+			}
+			return res, nil
+		default:
+			panic("not implemented")
+		}
 
 	case parseTypeResourcePropertyElt:
 		// A parseTypeResourcePropertyElt is a form of shorthand that replaces
@@ -180,6 +219,7 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 		// is commonly used in XMP as a cleaner way to represent a struct.
 		//
 		// See appendix C.2.9 (The parseTypeResourcePropertyElt) of ISO 16684-1:2011.
+		panic("not implemented")
 
 	case emptyPropertyElt:
 		// An emptyPropertyElt is an element with no contained content, just a
@@ -192,12 +232,58 @@ func (p *Packet) parsePropertyElement(start xml.StartElement, tokens []xml.Token
 		//
 		// See appendix C.2.12 (The emptyPropertyElt) of ISO 16684-1:2011.
 
-	case parseTypeLiteralPropertyElt, parseTypeCollectionPropertyElt, parseTypeOtherPropertyElt:
-		// Not allowed in XMP.  We simply ignore these.
-		return nil
-	}
+		isSimpleProperty := false
+		isURIProperty := false
+		isEmptyValue := true
+		for _, a := range start.Attr {
+			switch a.Name {
+			case attrRDFValue:
+				isSimpleProperty = true
+			case attrRDFResource:
+				isURIProperty = true
+			}
+			if a.Name != attrXMLLang && a.Name != attrRDFID && a.Name != attrRDFNodeID {
+				isEmptyValue = false
+			}
+		}
+		switch { // the order is important here
+		case isSimpleProperty:
+			// If there is an rdf:value attribute, then this is a simple
+			// property.  All other attributes are qualifiers.
+			panic("not implemented")
+		case isURIProperty:
+			// If there is an rdf:resource attribute, then this is a simple
+			// property with a URI value.  All other attributes are qualifiers.
+			var qq []Qualifier
+			var uriString string
+			for _, a := range start.Attr {
+				if a.Name == attrRDFResource {
+					uriString = a.Value
+				} else {
+					qq = append(qq, Qualifier{Name: a.Name, Value: textValue{Value: a.Value}})
+				}
+			}
+			uri, err := url.Parse(uriString)
+			if err != nil {
+				return nil, err
+			}
+			return uriValue{Value: uri, Q: qq}, nil
+		case isEmptyValue:
+			// If there are no attributes other than xml:lang, rdf:ID, or
+			// rdf:nodeID, then this is a simple property with an empty value.
+			panic("not implemented")
+		default:
+			// Otherwise, this is a struct, and the attributes other than
+			// xml:lang, rdf:ID, or rdf:nodeID are the fields.
+			panic("not implemented")
+		}
 
-	return nil
+	case parseTypeLiteralPropertyElt, parseTypeCollectionPropertyElt, parseTypeOtherPropertyElt:
+		return nil, errors.New("parseType not allowed in XMP")
+
+	default:
+		panic("unreachable")
+	}
 }
 
 // getProperyElementType determines the RDF type of a property element.
@@ -218,8 +304,6 @@ func getProperyElementType(start xml.StartElement, tokens []xml.Token) propertyE
 		case attrRDFDataType: // not allowed in XMP
 			return literalPropertyElt
 		case attrRDFParseType:
-			return emptyPropertyElt
-		default:
 			switch a.Value {
 			case "Literal": // not allowed in XMP
 				return parseTypeLiteralPropertyElt
@@ -230,17 +314,24 @@ func getProperyElementType(start xml.StartElement, tokens []xml.Token) propertyE
 			default: // not allowed in XMP
 				return parseTypeOtherPropertyElt
 			}
+		default:
+			return emptyPropertyElt
 		}
 	}
 
+	hasCharData := false
 	for _, t := range tokens {
 		switch t.(type) {
 		case xml.StartElement:
 			return resourcePropertyElt
 		case xml.CharData:
-			return literalPropertyElt
+			hasCharData = true
 		}
 	}
+	if hasCharData {
+		return literalPropertyElt
+	}
+
 	return emptyPropertyElt
 }
 
@@ -256,14 +347,27 @@ const (
 	emptyPropertyElt
 )
 
-var (
-	elemRDFRoot        = xml.Name{Space: RDFNamespace, Local: "RDF"}
-	elemRDFDescription = xml.Name{Space: RDFNamespace, Local: "Description"}
+type childElement struct {
+	name       xml.Name
+	start, end int
+}
 
-	attrRDFAbout     = xml.Name{Space: RDFNamespace, Local: "about"}
-	attrRDFDataType  = xml.Name{Space: RDFNamespace, Local: "datatype"}
-	attrRDFID        = xml.Name{Space: RDFNamespace, Local: "ID"}
-	attrRDFNodeID    = xml.Name{Space: RDFNamespace, Local: "nodeID"}
-	attrRDFParseType = xml.Name{Space: RDFNamespace, Local: "parseType"}
-	attrXMLLang      = xml.Name{Space: xmlNamespace, Local: "lang"}
-)
+func getChildElements(tokens []xml.Token) []childElement {
+	var children []childElement
+	level := 0
+	for i, t := range tokens {
+		switch t := t.(type) {
+		case xml.StartElement:
+			if level == 0 {
+				children = append(children, childElement{name: t.Name, start: i})
+			}
+			level++
+		case xml.EndElement:
+			level--
+			if level == 0 {
+				children[len(children)-1].end = i
+			}
+		}
+	}
+	return children
+}

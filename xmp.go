@@ -48,13 +48,13 @@ func getValueNameSpaces(m map[string]struct{}, v Value) {
 	case uriValue:
 		q = v.Q
 	case structValue:
-		for key, val := range v.val {
+		for key, val := range v.Value {
 			m[key.Space] = struct{}{}
 			getValueNameSpaces(m, val)
 		}
 		q = v.Q
 	case arrayValue:
-		for _, val := range v.val {
+		for _, val := range v.Value {
 			getValueNameSpaces(m, val)
 		}
 		q = v.Q
@@ -89,24 +89,24 @@ func (q Q) Qualifiers() []Qualifier {
 
 // textValue represents a simple non-URI value.
 type textValue struct {
-	val string
+	Value string
 	Q
 }
 
 // uriValue represents a simple URI value.
 type uriValue struct {
-	val *url.URL
+	Value *url.URL
 	Q
 }
 
 type structValue struct {
-	val map[xml.Name]Value
+	Value map[xml.Name]Value
 	Q
 }
 
 type arrayValue struct {
-	val []Value
-	tp  arrayType
+	Value []Value
+	Type  arrayType
 	Q
 }
 
@@ -116,4 +116,21 @@ const (
 	tpUnordered arrayType = iota + 1
 	tpOrdered
 	tpAlternative
+)
+
+var (
+	elemRDFRoot        = xml.Name{Space: RDFNamespace, Local: "RDF"}
+	elemRDFDescription = xml.Name{Space: RDFNamespace, Local: "Description"}
+	elemRDFBag         = xml.Name{Space: RDFNamespace, Local: "Bag"}
+	elemRDFSeq         = xml.Name{Space: RDFNamespace, Local: "Seq"}
+	elemRDFAlt         = xml.Name{Space: RDFNamespace, Local: "Alt"}
+
+	attrRDFAbout     = xml.Name{Space: RDFNamespace, Local: "about"}
+	attrRDFDataType  = xml.Name{Space: RDFNamespace, Local: "datatype"}
+	attrRDFID        = xml.Name{Space: RDFNamespace, Local: "ID"}
+	attrRDFNodeID    = xml.Name{Space: RDFNamespace, Local: "nodeID"}
+	attrRDFParseType = xml.Name{Space: RDFNamespace, Local: "parseType"}
+	attrRDFResource  = xml.Name{Space: RDFNamespace, Local: "resource"}
+	attrRDFValue     = xml.Name{Space: RDFNamespace, Local: "value"}
+	attrXMLLang      = xml.Name{Space: xmlNamespace, Local: "lang"}
 )
