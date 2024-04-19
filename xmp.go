@@ -117,20 +117,3 @@ const (
 	tpOrdered
 	tpAlternative
 )
-
-var (
-	elemRDFRoot        = xml.Name{Space: RDFNamespace, Local: "RDF"}
-	elemRDFDescription = xml.Name{Space: RDFNamespace, Local: "Description"}
-	elemRDFBag         = xml.Name{Space: RDFNamespace, Local: "Bag"}
-	elemRDFSeq         = xml.Name{Space: RDFNamespace, Local: "Seq"}
-	elemRDFAlt         = xml.Name{Space: RDFNamespace, Local: "Alt"}
-
-	attrRDFAbout     = xml.Name{Space: RDFNamespace, Local: "about"}
-	attrRDFDataType  = xml.Name{Space: RDFNamespace, Local: "datatype"}
-	attrRDFID        = xml.Name{Space: RDFNamespace, Local: "ID"}
-	attrRDFNodeID    = xml.Name{Space: RDFNamespace, Local: "nodeID"}
-	attrRDFParseType = xml.Name{Space: RDFNamespace, Local: "parseType"}
-	attrRDFResource  = xml.Name{Space: RDFNamespace, Local: "resource"}
-	attrRDFValue     = xml.Name{Space: RDFNamespace, Local: "value"}
-	attrXMLLang      = xml.Name{Space: xmlNamespace, Local: "lang"}
-)

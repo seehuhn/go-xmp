@@ -51,8 +51,7 @@ tokenLoop:
 		t, err := dec.Token()
 		if err == io.EOF {
 			break
-		}
-		if err != nil {
+		} else if err != nil {
 			return nil, err
 		}
 
@@ -100,7 +99,7 @@ tokenLoop:
 				// including the start element, but not the end element.
 
 				start := propertyElement[0].(xml.StartElement)
-				val, _ := parsePropertyElement(start, propertyElement[1:])
+				val, _ := parsePropertyElement(start, propertyElement[1:], nil)
 				if val != nil {
 					p.Properties[start.Name] = val
 				}
@@ -128,7 +127,7 @@ tokenLoop:
 //
 // This implements the rules from appendix C.2.5 (Content of a nodeElement)
 // of ISO 16684-1:2011.
-func parsePropertyElement(start xml.StartElement, tokens []xml.Token) (Value, error) {
+func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Value, error) {
 	tp := getProperyElementType(start, tokens)
 	switch tp {
 	case literalPropertyElt:
@@ -137,7 +136,6 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token) (Value, er
 		// the element become qualifiers in the XMP data model.
 		//
 		// See appendix C.2.7 (The literalPropertyElt) of ISO 16684-1:2011.
-		var qq []Qualifier
 		for _, a := range start.Attr {
 			qq = append(qq, Qualifier{Name: a.Name, Value: textValue{Value: a.Value}})
 		}
@@ -160,7 +158,6 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token) (Value, er
 		// resourcePropertyElt.
 		//
 		// See appendix C.2.6 (The resourcePropertyElt) of ISO 16684-1:2011.
-		var qq []Qualifier
 		for _, a := range start.Attr {
 			if a.Name != attrXMLLang {
 				continue
@@ -171,18 +168,68 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token) (Value, er
 		children := getChildElements(tokens)
 		switch {
 		case len(children) == 1 && children[0].name == elemRDFDescription:
+			descStart := tokens[children[0].start].(xml.StartElement)
 			inner := tokens[children[0].start+1 : children[0].end]
 			fields := getChildElements(inner)
+
+			// General qualifiers are distinguished from structs by the presence
+			// of an rdf:value field or attribute.
+			attrIdx := -1
+			valueIdx := -1
+			for i, a := range descStart.Attr {
+				if a.Name == elemRDFValue {
+					attrIdx = i
+					break
+				}
+			}
+			for i, f := range fields {
+				if f.name == elemRDFValue {
+					valueIdx = i
+					break
+				}
+			}
+			// TODO(voss): check for rdf:value attributes, too
+			if attrIdx >= 0 || valueIdx >= 0 {
+				for _, a := range descStart.Attr {
+					if a.Name != elemRDFValue {
+						qq = append(qq, Qualifier{Name: a.Name, Value: textValue{Value: a.Value}})
+					}
+				}
+
+				for _, f := range fields {
+					val, _ := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
+					if f.name != elemRDFValue {
+						qq = append(qq, Qualifier{Name: f.name, Value: val})
+					}
+				}
+
+				if attrIdx >= 0 {
+					return textValue{Value: descStart.Attr[attrIdx].Value, Q: qq}, nil
+				}
+				f := fields[valueIdx]
+				value, _ := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
+				if value == nil {
+					value = textValue{Value: ""}
+				}
+				return value, nil
+			}
+
 			res := structValue{
 				Value: make(map[xml.Name]Value, len(fields)),
 				Q:     qq,
 			}
+			for _, a := range descStart.Attr {
+				if a.Name != attrXMLLang {
+					res.Value[a.Name] = textValue{Value: a.Value}
+				}
+			}
 			for _, f := range fields {
-				val, _ := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end])
+				val, _ := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
 				if val != nil {
 					res.Value[f.name] = val
 				}
 			}
+
 			return res, nil
 		case len(children) == 1 && (children[0].name == elemRDFBag || children[0].name == elemRDFSeq || children[0].name == elemRDFAlt):
 			var tp arrayType
@@ -202,7 +249,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token) (Value, er
 				Q:     qq,
 			}
 			for _, i := range items {
-				val, _ := parsePropertyElement(inner[i.start].(xml.StartElement), inner[i.start+1:i.end])
+				val, _ := parsePropertyElement(inner[i.start].(xml.StartElement), inner[i.start+1:i.end], nil)
 				if val != nil {
 					res.Value = append(res.Value, val)
 				}
@@ -254,7 +301,6 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token) (Value, er
 		case isURIProperty:
 			// If there is an rdf:resource attribute, then this is a simple
 			// property with a URI value.  All other attributes are qualifiers.
-			var qq []Qualifier
 			var uriString string
 			for _, a := range start.Attr {
 				if a.Name == attrRDFResource {
@@ -271,7 +317,15 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token) (Value, er
 		case isEmptyValue:
 			// If there are no attributes other than xml:lang, rdf:ID, or
 			// rdf:nodeID, then this is a simple property with an empty value.
-			panic("not implemented")
+			for _, a := range start.Attr {
+				if a.Name == attrXMLLang {
+					res := textValue{
+						Q: Q{{Name: attrXMLLang, Value: textValue{Value: a.Value}}},
+					}
+					return res, nil
+				}
+			}
+			return textValue{}, nil
 		default:
 			// Otherwise, this is a struct, and the attributes other than
 			// xml:lang, rdf:ID, or rdf:nodeID are the fields.
@@ -371,3 +425,21 @@ func getChildElements(tokens []xml.Token) []childElement {
 	}
 	return children
 }
+
+var (
+	elemRDFRoot        = xml.Name{Space: RDFNamespace, Local: "RDF"}
+	elemRDFDescription = xml.Name{Space: RDFNamespace, Local: "Description"}
+	elemRDFBag         = xml.Name{Space: RDFNamespace, Local: "Bag"}
+	elemRDFSeq         = xml.Name{Space: RDFNamespace, Local: "Seq"}
+	elemRDFAlt         = xml.Name{Space: RDFNamespace, Local: "Alt"}
+	elemRDFValue       = xml.Name{Space: RDFNamespace, Local: "value"}
+
+	attrRDFAbout     = xml.Name{Space: RDFNamespace, Local: "about"}
+	attrRDFDataType  = xml.Name{Space: RDFNamespace, Local: "datatype"}
+	attrRDFID        = xml.Name{Space: RDFNamespace, Local: "ID"}
+	attrRDFNodeID    = xml.Name{Space: RDFNamespace, Local: "nodeID"}
+	attrRDFParseType = xml.Name{Space: RDFNamespace, Local: "parseType"}
+	attrRDFResource  = xml.Name{Space: RDFNamespace, Local: "resource"}
+	attrRDFValue     = xml.Name{Space: RDFNamespace, Local: "value"}
+	attrXMLLang      = xml.Name{Space: xmlNamespace, Local: "lang"}
+)

@@ -28,6 +28,14 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+var (
+	elemTest  = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "prop"}
+	elemTestA = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "a"}
+	elemTestB = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "b"}
+	elemTestC = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "c"}
+	elemTestQ = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "q"}
+)
+
 type testCase struct {
 	desc    string
 	in      *Packet
@@ -39,28 +47,28 @@ var testCases = []testCase{
 		desc: "simple non-URI value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				{Space: "http://ns.seehuhn.de/test/", Local: "testname"}: textValue{Value: "testvalue"},
+				elemTest: textValue{Value: "testvalue"},
 			},
 		},
-		pattern: []string{"<test:testname>testvalue</test:testname>"},
+		pattern: []string{"<test:prop>testvalue</test:prop>"},
 	},
 	{
 		desc: "simple URI value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				{Space: "http://ns.seehuhn.de/test/", Local: "testname"}: uriValue{Value: &url.URL{Scheme: "http", Host: "example.com"}},
+				elemTest: uriValue{Value: &url.URL{Scheme: "http", Host: "example.com"}},
 			},
 		},
-		pattern: []string{"<test:testname rdf:resource=\"http://example.com\"/>"},
+		pattern: []string{"<test:prop rdf:resource=\"http://example.com\"/>"},
 	},
 	{
 		desc: "XML markup in text value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				{Space: "http://ns.seehuhn.de/test/", Local: "testname"}: textValue{Value: "<b>test</b>"},
+				elemTest: textValue{Value: "<b>test</b>"},
 			},
 		},
-		pattern: []string{"<test:testname>&lt;b&gt;test&lt;/b&gt;</test:testname>"},
+		pattern: []string{"<test:prop>&lt;b&gt;test&lt;/b&gt;</test:prop>"},
 	},
 	{
 		desc: "struct value",
@@ -68,9 +76,9 @@ var testCases = []testCase{
 			Properties: map[xml.Name]Value{
 				{Space: "http://ns.seehuhn.de/test/", Local: "s"}: structValue{
 					Value: map[xml.Name]Value{
-						{Space: "http://ns.seehuhn.de/test/", Local: "a"}: textValue{Value: "1"},
-						{Space: "http://ns.seehuhn.de/test/", Local: "b"}: textValue{Value: "2"},
-						{Space: "http://ns.seehuhn.de/test/", Local: "c"}: textValue{Value: "3"},
+						elemTestA: textValue{Value: "1", Q: Q{{elemTestQ, textValue{Value: "q"}}}},
+						elemTestB: textValue{Value: "2", Q: Q{{elemTestQ, textValue{Value: "q"}}}},
+						elemTestC: textValue{Value: "3", Q: Q{{elemTestQ, textValue{Value: "q"}}}},
 					},
 				},
 			},
@@ -78,11 +86,121 @@ var testCases = []testCase{
 		pattern: []string{
 			"<test:s>",
 			"<rdf:Description>",
-			"<test:a>1</test:a>",
-			"<test:b>2</test:b>",
-			"<test:c>3</test:c>",
+			"<test:a>",
+			"<rdf:Description rdf:value=\"1\" test:q=\"q\"/>",
+			"</test:a>",
+			"<test:b>",
+			"<rdf:Description rdf:value=\"2\" test:q=\"q\"/>",
+			"</test:b>",
+			"<test:c>",
+			"<rdf:Description rdf:value=\"3\" test:q=\"q\"/>",
+			"</test:c>",
 			"</rdf:Description>",
 			"</test:s>",
+		},
+	},
+	{
+		desc: "xml:lang on property",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				elemTest: textValue{
+					Value: "testvalue",
+					Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de_DE"}}},
+				},
+			},
+		},
+		pattern: []string{"<test:prop xml:lang=\"de_DE\">testvalue</test:prop>"},
+	},
+	{
+		desc: "xml:lang on structure field",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				elemTest: structValue{
+					Value: map[xml.Name]Value{
+						elemTestA: textValue{
+							Value: "Hallo",
+							Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de"}}},
+						},
+					},
+				},
+			},
+		},
+		pattern: []string{
+			"<test:prop>",
+			"<rdf:Description>",
+			"<test:a xml:lang=\"de\">Hallo</test:a>",
+			"</rdf:Description>",
+			"</test:prop>",
+		},
+	},
+	{
+		desc: "xml:lang on array item",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				elemTest: arrayValue{
+					Value: []Value{
+						textValue{Value: "a"},
+						textValue{
+							Value: "b",
+							Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "fr"}}},
+						},
+						textValue{Value: "c"},
+					},
+					Type: tpOrdered,
+				},
+			},
+		},
+		pattern: []string{
+			"<test:prop>",
+			"<rdf:Seq>",
+			"<rdf:li>a</rdf:li>",
+			"<rdf:li xml:lang=\"fr\">b</rdf:li>",
+			"<rdf:li>c</rdf:li>",
+			"</rdf:Seq>",
+			"</test:prop>",
+		},
+	},
+	{
+		desc: "general qualfiers",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				elemTest: textValue{
+					Value: "test value",
+					Q: []Qualifier{
+						{elemTestQ, textValue{Value: "qualifier"}},
+					},
+				},
+			},
+		},
+		pattern: []string{
+			"<test:prop>",
+			"<rdf:Description rdf:value=\"test value\" test:q=\"qualifier\"/>",
+			"</test:prop>",
+		},
+	},
+	{
+		desc: "xml:lang on qualifier value",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				elemTest: textValue{
+					Value: "test value",
+					Q: []Qualifier{
+						{elemTestQ, textValue{
+							Value: "qualifier",
+							Q: []Qualifier{
+								{attrXMLLang, textValue{Value: "te_ST"}},
+							},
+						}},
+					},
+				},
+			},
+		},
+		pattern: []string{
+			"<test:prop>",
+			"<rdf:Description rdf:value=\"test value\">",
+			"<test:q xml:lang=\"te_ST\">qualifier</test:q>",
+			"</rdf:Description>",
+			"</test:prop>",
 		},
 	},
 }
@@ -96,7 +214,6 @@ func TestRoundTrip(t *testing.T) {
 			}
 
 			bodyString := string(body)
-
 			fmt.Println(bodyString)
 
 			var parts []string
@@ -109,12 +226,12 @@ func TestRoundTrip(t *testing.T) {
 				t.Fatalf("missing property %q in test case %d", tc.pattern, i)
 			}
 
-			p2, err := Read(bytes.NewReader(body))
+			out, err := Read(bytes.NewReader(body))
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			if d := cmp.Diff(tc.in, p2); d != "" {
+			if d := cmp.Diff(tc.in, out); d != "" {
 				t.Fatalf("RoundTrip mismatch (-want +got):\n%s", d)
 			}
 		})

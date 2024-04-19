@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/xml"
 	"net/url"
+	"slices"
 	"sort"
 
 	"golang.org/x/exp/maps"
@@ -207,9 +208,29 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 
 	var attr []xml.Attr
 
+	var qualifierTokens []xml.Token
+	var qualifierAttr []xml.Attr
+	elemValue := e.makeName(RDFNamespace, "value")
+	valueDone := false
+
 	switch value := value.(type) {
 	case textValue:
-		tokens = append(tokens, xml.CharData(value.Value))
+		var hasQualifiers bool
+		for _, q := range value.Q {
+			if q.Name != attrXMLLang {
+				hasQualifiers = true
+				break
+			}
+		}
+		if hasQualifiers {
+			qualifierAttr = append(qualifierAttr, xml.Attr{
+				Name:  elemValue,
+				Value: value.Value,
+			})
+			valueDone = true
+		} else {
+			tokens = append(tokens, xml.CharData(value.Value))
+		}
 	case uriValue:
 		attr = append(attr, xml.Attr{
 			Name:  e.makeName(RDFNamespace, "resource"),
@@ -226,13 +247,34 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 			return fields[i].Local < fields[j].Local
 		})
 
-		tokens = append(tokens, xml.StartElement{Name: envName})
+		// leave space for the rdf:Description start element
+		descBase := len(tokens)
+		tokens = append(tokens, nil)
+		var descAttr []xml.Attr
 		for _, field := range fields {
 			fieldName := e.makeName(field.Space, field.Local)
 			fieldValue := value.Value[field]
-			tokens = e.appendProperty(tokens, fieldName, fieldValue)
+			if val, ok := fieldValue.(textValue); ok && len(val.Q) == 0 {
+				descAttr = append(descAttr, xml.Attr{
+					Name:  fieldName,
+					Value: val.Value,
+				})
+			} else {
+				tokens = e.appendProperty(tokens, fieldName, fieldValue)
+			}
 		}
-		tokens = append(tokens, xml.EndElement{Name: envName})
+		if len(tokens) > descBase+1 {
+			tokens[descBase] = xml.StartElement{
+				Name: envName,
+				Attr: descAttr,
+			}
+			tokens = append(tokens, xml.EndElement{Name: envName})
+		} else {
+			tokens[descBase] = jvxml.EmptyElement{
+				Name: envName,
+				Attr: descAttr,
+			}
+		}
 	case arrayValue:
 		var tp string
 		switch value.Type {
@@ -254,7 +296,7 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 		}
 		tokens = append(tokens, xml.EndElement{Name: envName})
 	default:
-		panic("unexpected value type")
+		panic("unreachable")
 	}
 
 	for _, q := range value.Qualifiers() {
@@ -263,12 +305,43 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 				Name:  e.makeName(xmlNamespace, "lang"),
 				Value: q.Value.(textValue).Value,
 			})
-			continue
+		} else if val, ok := q.Value.(textValue); ok && len(val.Q) == 0 {
+			qualifierAttr = append(qualifierAttr, xml.Attr{
+				Name:  e.makeName(q.Name.Space, q.Name.Local),
+				Value: val.Value,
+			})
+		} else {
+			qualifierTokens = e.appendProperty(qualifierTokens,
+				e.makeName(q.Name.Space, q.Name.Local), q.Value)
 		}
-		panic("not implemented")
 	}
 
-	if len(tokens) > base+1 {
+	if len(qualifierTokens) > 0 || len(qualifierAttr) > 0 {
+		elemDescription := e.makeName(RDFNamespace, "Description")
+		tokens[base] = xml.StartElement{Name: name, Attr: attr}
+		if valueDone {
+			if len(qualifierTokens) == 0 {
+				tokens = append(tokens, jvxml.EmptyElement{Name: elemDescription, Attr: qualifierAttr})
+			} else {
+				tokens = append(tokens, xml.StartElement{Name: elemDescription, Attr: qualifierAttr})
+				tokens = append(tokens, qualifierTokens...)
+				tokens = append(tokens, xml.EndElement{Name: elemDescription})
+			}
+		} else if len(tokens) > base+1 {
+			tokens = slices.Insert[[]xml.Token, xml.Token](tokens, base+1,
+				xml.StartElement{Name: elemDescription, Attr: qualifierAttr},
+				xml.StartElement{Name: elemValue, Attr: attr})
+			tokens = append(tokens, xml.EndElement{Name: elemValue})
+			tokens = append(tokens, qualifierTokens...)
+			tokens = append(tokens, xml.EndElement{Name: elemDescription})
+		} else {
+			tokens = append(tokens, xml.StartElement{Name: elemDescription})
+			tokens = append(tokens, jvxml.EmptyElement{Name: elemValue, Attr: attr})
+			tokens = append(tokens, qualifierTokens...)
+			tokens = append(tokens, xml.EndElement{Name: elemDescription})
+		}
+		tokens = append(tokens, xml.EndElement{Name: name})
+	} else if len(tokens) > base+1 {
 		tokens[base] = xml.StartElement{
 			Name: name,
 			Attr: attr,
