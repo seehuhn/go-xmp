@@ -19,6 +19,9 @@ package xmp
 import (
 	"encoding/xml"
 	"net/url"
+	"sort"
+
+	"golang.org/x/exp/maps"
 )
 
 // Packet represents an XMP packet.
@@ -87,6 +90,30 @@ func (q Q) Qualifiers() []Qualifier {
 	return q
 }
 
+// getLang appends the xml:lang attribute if needed.
+func (q Q) getLang(attr []xml.Attr) []xml.Attr {
+	for _, q := range q {
+		if q.Name == attrXMLLang {
+			if v, ok := q.Value.(textValue); ok {
+				// We don't need to use .makeName() here, since the prefix
+				// is always "xml".
+				attr = append(attr, xml.Attr{Name: attrXMLLang, Value: v.Value})
+			}
+		}
+	}
+	return attr
+}
+
+// hasQualifiers returns true if there are any qualifiers other than xml:lang.
+func (q Q) hasQualifiers() bool {
+	for _, q := range q {
+		if q.Name != attrXMLLang {
+			return true
+		}
+	}
+	return false
+}
+
 // textValue represents a simple non-URI value.
 type textValue struct {
 	Value string
@@ -102,6 +129,29 @@ type uriValue struct {
 type structValue struct {
 	Value map[xml.Name]Value
 	Q
+}
+
+// fieldNames returns the field names sorted by namespace and local name.
+func (s *structValue) fieldNames() []xml.Name {
+	fieldNames := maps.Keys(s.Value)
+	sort.Slice(fieldNames, func(i, j int) bool {
+		if fieldNames[i].Space != fieldNames[j].Space {
+			return fieldNames[i].Space < fieldNames[j].Space
+		}
+		return fieldNames[i].Local < fieldNames[j].Local
+	})
+	return fieldNames
+}
+
+// allSimple returns true if all values are simple non-URI values, with no
+// qualifiers.
+func (s *structValue) allSimple() bool {
+	for _, v := range s.Value {
+		if v, ok := v.(textValue); !ok || len(v.Q) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 type arrayValue struct {

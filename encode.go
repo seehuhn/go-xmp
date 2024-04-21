@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"net/url"
-	"slices"
 	"sort"
 
 	"golang.org/x/exp/maps"
@@ -202,156 +201,319 @@ func (e *encoder) makeName(ns, local string) xml.Name {
 }
 
 func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value) []xml.Token {
-	// leave a space for the StartElement
-	base := len(tokens)
-	tokens = append(tokens, nil)
+	rdfValue := e.makeName(RDFNamespace, "value")
+	rdfResource := e.makeName(RDFNamespace, "resource")
+	attrParseTypeResource := xml.Attr{
+		Name:  e.makeName(RDFNamespace, "parseType"),
+		Value: "Resource",
+	}
 
-	var attr []xml.Attr
-
-	var qualifierTokens []xml.Token
-	var qualifierAttr []xml.Attr
-	elemValue := e.makeName(RDFNamespace, "value")
-	valueDone := false
-
-	switch value := value.(type) {
+	switch val := value.(type) {
 	case textValue:
-		var hasQualifiers bool
-		for _, q := range value.Q {
-			if q.Name != attrXMLLang {
-				hasQualifiers = true
-				break
-			}
-		}
-		if hasQualifiers {
-			qualifierAttr = append(qualifierAttr, xml.Attr{
-				Name:  elemValue,
-				Value: value.Value,
+		// Possible ways to encode the value:
+		//
+		// option 1 (no non-lang qualifiers):
+		// <test:prop xml:lang="te-ST">value</test:prop>
+		//
+		// option 2 (with non-lang qualifiers):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description>
+		//     <rdf:value>value</rdf:value>
+		//     <test:q>v</test:q>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 3a (with simple non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description test:q="q" rdf:value="value" />
+		// </test:prop>
+		//
+		// option 3b (with non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description test:q1="v1" rdf:value="value">
+		//     <test:q2 rdf:resource="test:v2"/>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 4 (with non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST" rdf:parseType="Resource">
+		//   <rdf:value>value</rdf:value>
+		//   <test:q>v</test:q>
+		// </test:prop>
+
+		attr := val.Q.getLang(nil)
+
+		if !val.Q.hasQualifiers() { // use option 1
+			tokens = append(tokens,
+				xml.StartElement{Name: name, Attr: attr},
+				xml.CharData(val.Value),
+				xml.EndElement{Name: name},
+			)
+		} else { // use option 4
+			attr = append(attr, xml.Attr{
+				Name:  e.makeName(RDFNamespace, "parseType"),
+				Value: "Resource",
 			})
-			valueDone = true
-		} else {
-			tokens = append(tokens, xml.CharData(value.Value))
+			tokens = append(tokens,
+				xml.StartElement{Name: name, Attr: attr},
+				xml.StartElement{Name: rdfValue},
+				xml.CharData(val.Value),
+				xml.EndElement{Name: rdfValue},
+			)
+			for _, q := range val.Q {
+				if q.Name == attrXMLLang {
+					continue
+				}
+				tokens = e.appendProperty(tokens, e.makeName(q.Name.Space, q.Name.Local), q.Value)
+			}
+			tokens = append(tokens, xml.EndElement{Name: name})
 		}
+
 	case uriValue:
-		attr = append(attr, xml.Attr{
-			Name:  e.makeName(RDFNamespace, "resource"),
-			Value: value.Value.String(),
-		})
+		// Possible ways to encode the value:
+		//
+		// option 1 (no non-lang qualifiers):
+		// <test:prop xml:lang="te-ST" rdf:resource="http://example.com"/>
+		//
+		// option 2 (with non-lang qualifiers):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description>
+		//     <rdf:value rdf:resource="http://example.com"/>
+		//     <test:q rdf:resource="http://example.com"/>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 3 (with non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description test:q="q">
+		//     <rdf:value rdf:resource="http://example.com"/>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 4 (with non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST" rdf:parseType="Resource">
+		//   <rdf:value rdf:resource="http://example.com"/>
+		//   <test:q rdf:resource="http://example.com"/>
+		// </test:prop>
+
+		attr := val.Q.getLang(nil)
+
+		if val.Q.hasQualifiers() { // use option 4
+			attr = append(attr, xml.Attr{
+				Name:  e.makeName(RDFNamespace, "parseType"),
+				Value: "Resource",
+			})
+			tokens = append(tokens,
+				xml.StartElement{Name: name, Attr: attr},
+				jvxml.EmptyElement{Name: rdfValue,
+					Attr: []xml.Attr{{Name: rdfResource, Value: val.Value.String()}},
+				},
+			)
+			for _, q := range val.Q {
+				if q.Name == attrXMLLang {
+					continue
+				}
+				tokens = e.appendProperty(tokens, e.makeName(q.Name.Space, q.Name.Local), q.Value)
+			}
+			tokens = append(tokens, xml.EndElement{Name: name})
+		} else { // use option 1
+			attr = append(attr, xml.Attr{
+				Name:  rdfResource,
+				Value: val.Value.String(),
+			})
+			tokens = append(tokens,
+				jvxml.EmptyElement{Name: name, Attr: attr},
+			)
+		}
+
 	case structValue:
-		envName := e.makeName(RDFNamespace, "Description")
+		// Possible ways to encode the value:
+		//
+		// option 1a (no non-lang qualifiers):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description>
+		//     <test:a>1</test:a>
+		//     <test:b>2</test:b>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 1b (no non-lang qualifiers):
+		// <test:prop xml:lang="te-ST" rdf:parseType="Resource">
+		//   <test:a>1</test:a>
+		//   <test:b>2</test:b>
+		// </test:prop>
+		//
+		// option 1c (no non-lang qualifiers, simple values, shortened):
+		// <test:prop xml:lang="te-ST" test:a="1", test:b="2"/>
+		//
+		// option 2 (with non-lang qualifiers):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description>
+		//	   <rdf:value>
+		//       <rdf:Description>
+		//         <test:a>1</test:a>
+		//         <test:b>2</test:b>
+		//       </rdf:Description>
+		//     </rdf:value>
+		//     <test:q>v</test:q>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 3 (with non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description test:q1="v">
+		//	   <rdf:value>
+		//       <rdf:Description test:a="1">
+		//         <test:b rdf:resource="test:b"/>
+		//       </rdf:Description>
+		//     </rdf:value>
+		//     <test:q2 rdf:resource="test:q2"/>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 4 (with non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST" rdf:parseType="Resource">
+		//	 <rdf:value rdf:parseType="Resource">
+		//     <test:a>1</test:a>
+		//     <test:b>2</test:b>
+		//   </rdf:value>
+		//   <test:q>v</test:q>
+		// </test:prop>
 
-		fields := maps.Keys(value.Value)
-		sort.Slice(fields, func(i, j int) bool {
-			if fields[i].Space != fields[j].Space {
-				return fields[i].Space < fields[j].Space
-			}
-			return fields[i].Local < fields[j].Local
-		})
+		attr := val.Q.getLang(nil)
 
-		// leave space for the rdf:Description start element
-		descBase := len(tokens)
-		tokens = append(tokens, nil)
-		var descAttr []xml.Attr
-		for _, field := range fields {
-			fieldName := e.makeName(field.Space, field.Local)
-			fieldValue := value.Value[field]
-			if val, ok := fieldValue.(textValue); ok && len(val.Q) == 0 {
-				descAttr = append(descAttr, xml.Attr{
-					Name:  fieldName,
-					Value: val.Value,
-				})
-			} else {
-				tokens = e.appendProperty(tokens, fieldName, fieldValue)
+		fieldNames := val.fieldNames()
+		if val.Q.hasQualifiers() { // use option 4
+			attr = append(attr, attrParseTypeResource)
+			tokens = append(tokens,
+				xml.StartElement{Name: name, Attr: attr},
+				xml.StartElement{Name: rdfValue, Attr: []xml.Attr{attrParseTypeResource}},
+			)
+			for _, fieldName := range fieldNames {
+				fName := e.makeName(fieldName.Space, fieldName.Local)
+				tokens = e.appendProperty(tokens, fName, val.Value[fieldName])
 			}
+			tokens = append(tokens, xml.EndElement{Name: rdfValue})
+			for _, q := range val.Q {
+				if q.Name == attrXMLLang {
+					continue
+				}
+				qName := e.makeName(q.Name.Space, q.Name.Local)
+				tokens = e.appendProperty(tokens, qName, q.Value)
+			}
+			tokens = append(tokens, xml.EndElement{Name: name})
+		} else if val.allSimple() { // use option 1c
+			for _, fieldName := range fieldNames {
+				fName := e.makeName(fieldName.Space, fieldName.Local)
+				attr = append(attr, xml.Attr{Name: fName, Value: val.Value[fieldName].(textValue).Value})
+			}
+			tokens = append(tokens, jvxml.EmptyElement{Name: name, Attr: attr})
+		} else { // use option 1b
+			attr = append(attr, attrParseTypeResource)
+			tokens = append(tokens, xml.StartElement{Name: name, Attr: attr})
+			for _, fieldName := range fieldNames {
+				fName := e.makeName(fieldName.Space, fieldName.Local)
+				tokens = e.appendProperty(tokens, fName, val.Value[fieldName])
+			}
+			tokens = append(tokens, xml.EndElement{Name: name})
 		}
-		if len(tokens) > descBase+1 {
-			tokens[descBase] = xml.StartElement{
-				Name: envName,
-				Attr: descAttr,
-			}
-			tokens = append(tokens, xml.EndElement{Name: envName})
-		} else {
-			tokens[descBase] = jvxml.EmptyElement{
-				Name: envName,
-				Attr: descAttr,
-			}
-		}
+
 	case arrayValue:
-		var tp string
-		switch value.Type {
+		// Possible ways to encode the value:
+		//
+		// option 1 (no non-lang qualifiers):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Seq>
+		//     <rdf:li>1</rdf:li>
+		//     <rdf:li>2</rdf:li>
+		//   </rdf:Seq>
+		// </test:prop>
+		//
+		// option 2 (with non-lang qualifiers):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description>
+		//     <rdf:value>
+		//       <rdf:Seq>
+		//         <rdf:li>1</rdf:li>
+		//         <rdf:li>2</rdf:li>
+		//       </rdf:Seq>
+		//     </rdf:value>
+		//     <test:q>v</test:q>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 3 (with non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST">
+		//   <rdf:Description test:q="v">
+		//     <rdf:value>
+		//       <rdf:Seq>
+		//         <rdf:li>1</rdf:li>
+		//         <rdf:li>2</rdf:li>
+		//       </rdf:Seq>
+		//     </rdf:value>
+		//   </rdf:Description>
+		// </test:prop>
+		//
+		// option 4 (with non-lang qualifiers, shorter form):
+		// <test:prop xml:lang="te-ST" rdf:parseType="Resource">
+		//   <rdf:value>
+		//     <rdf:Seq>
+		//       <rdf:li>1</rdf:li>
+		//       <rdf:li>2</rdf:li>
+		//     </rdf:Seq>
+		//   </rdf:value>
+		//   <test:q>v</test:q>
+		// </test:prop>
+
+		attr := val.Q.getLang(nil)
+
+		var env string
+		switch val.Type {
 		case tpUnordered:
-			tp = "Bag"
+			env = "Bag"
 		case tpOrdered:
-			tp = "Seq"
+			env = "Seq"
 		case tpAlternative:
-			tp = "Alt"
+			env = "Alt"
 		default:
 			panic("unexpected array type")
 		}
-		envName := e.makeName(RDFNamespace, tp)
-		itemName := e.makeName(RDFNamespace, "li")
+		envName := e.makeName(RDFNamespace, env)
+		liName := e.makeName(RDFNamespace, "li")
 
-		tokens = append(tokens, xml.StartElement{Name: envName})
-		for _, itemValue := range value.Value {
-			tokens = e.appendProperty(tokens, itemName, itemValue)
+		if val.Q.hasQualifiers() { // use option 4
+			attr = append(attr, attrParseTypeResource)
+			tokens = append(tokens,
+				xml.StartElement{Name: name, Attr: attr},
+				xml.StartElement{Name: rdfValue},
+				xml.StartElement{Name: envName})
+			for _, v := range val.Value {
+				tokens = e.appendProperty(tokens, liName, v)
+			}
+			tokens = append(tokens, xml.EndElement{Name: envName})
+			tokens = append(tokens, xml.EndElement{Name: rdfValue})
+			for _, q := range val.Q {
+				if q.Name == attrXMLLang {
+					continue
+				}
+				qName := e.makeName(q.Name.Space, q.Name.Local)
+				tokens = e.appendProperty(tokens, qName, q.Value)
+			}
+			tokens = append(tokens, xml.EndElement{Name: name})
+		} else { // use option 1
+			tokens = append(tokens,
+				xml.StartElement{Name: name, Attr: attr},
+				xml.StartElement{Name: envName})
+			for _, v := range val.Value {
+				tokens = e.appendProperty(tokens, liName, v)
+			}
+			tokens = append(tokens,
+				xml.EndElement{Name: envName},
+				xml.EndElement{Name: name})
 		}
-		tokens = append(tokens, xml.EndElement{Name: envName})
+
 	default:
 		panic("unreachable")
-	}
-
-	for _, q := range value.Qualifiers() {
-		if q.Name == attrXMLLang {
-			attr = append(attr, xml.Attr{
-				Name:  e.makeName(xmlNamespace, "lang"),
-				Value: q.Value.(textValue).Value,
-			})
-		} else if val, ok := q.Value.(textValue); ok && len(val.Q) == 0 {
-			qualifierAttr = append(qualifierAttr, xml.Attr{
-				Name:  e.makeName(q.Name.Space, q.Name.Local),
-				Value: val.Value,
-			})
-		} else {
-			qualifierTokens = e.appendProperty(qualifierTokens,
-				e.makeName(q.Name.Space, q.Name.Local), q.Value)
-		}
-	}
-
-	if len(qualifierTokens) > 0 || len(qualifierAttr) > 0 {
-		elemDescription := e.makeName(RDFNamespace, "Description")
-		tokens[base] = xml.StartElement{Name: name, Attr: attr}
-		if valueDone {
-			if len(qualifierTokens) == 0 {
-				tokens = append(tokens, jvxml.EmptyElement{Name: elemDescription, Attr: qualifierAttr})
-			} else {
-				tokens = append(tokens, xml.StartElement{Name: elemDescription, Attr: qualifierAttr})
-				tokens = append(tokens, qualifierTokens...)
-				tokens = append(tokens, xml.EndElement{Name: elemDescription})
-			}
-		} else if len(tokens) > base+1 {
-			tokens = slices.Insert[[]xml.Token, xml.Token](tokens, base+1,
-				xml.StartElement{Name: elemDescription, Attr: qualifierAttr},
-				xml.StartElement{Name: elemValue, Attr: attr})
-			tokens = append(tokens, xml.EndElement{Name: elemValue})
-			tokens = append(tokens, qualifierTokens...)
-			tokens = append(tokens, xml.EndElement{Name: elemDescription})
-		} else {
-			tokens = append(tokens, xml.StartElement{Name: elemDescription})
-			tokens = append(tokens, jvxml.EmptyElement{Name: elemValue, Attr: attr})
-			tokens = append(tokens, qualifierTokens...)
-			tokens = append(tokens, xml.EndElement{Name: elemDescription})
-		}
-		tokens = append(tokens, xml.EndElement{Name: name})
-	} else if len(tokens) > base+1 {
-		tokens[base] = xml.StartElement{
-			Name: name,
-			Attr: attr,
-		}
-		tokens = append(tokens, xml.EndElement{Name: name})
-	} else {
-		tokens[base] = jvxml.EmptyElement{
-			Name: name,
-			Attr: attr,
-		}
 	}
 
 	return tokens

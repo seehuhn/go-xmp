@@ -34,6 +34,8 @@ var (
 	elemTestB = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "b"}
 	elemTestC = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "c"}
 	elemTestQ = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "q"}
+
+	testURL = &url.URL{Scheme: "http", Host: "example.com"}
 )
 
 type testCase struct {
@@ -56,7 +58,7 @@ var testCases = []testCase{
 		desc: "simple URI value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: uriValue{Value: &url.URL{Scheme: "http", Host: "example.com"}},
+				elemTest: uriValue{Value: testURL},
 			},
 		},
 		pattern: []string{"<test:prop rdf:resource=\"http://example.com\"/>"},
@@ -84,18 +86,19 @@ var testCases = []testCase{
 			},
 		},
 		pattern: []string{
-			"<test:s>",
-			"<rdf:Description>",
-			"<test:a>",
-			"<rdf:Description rdf:value=\"1\" test:q=\"q\"/>",
+			"<test:s rdf:parseType=\"Resource\">",
+			"<test:a rdf:parseType=\"Resource\">",
+			"<rdf:value>1</rdf:value>",
+			"<test:q>q</test:q>",
 			"</test:a>",
-			"<test:b>",
-			"<rdf:Description rdf:value=\"2\" test:q=\"q\"/>",
+			"<test:b rdf:parseType=\"Resource\">",
+			"<rdf:value>2</rdf:value>",
+			"<test:q>q</test:q>",
 			"</test:b>",
-			"<test:c>",
-			"<rdf:Description rdf:value=\"3\" test:q=\"q\"/>",
+			"<test:c rdf:parseType=\"Resource\">",
+			"<rdf:value>3</rdf:value>",
+			"<test:q>q</test:q>",
 			"</test:c>",
-			"</rdf:Description>",
 			"</test:s>",
 		},
 	},
@@ -105,11 +108,23 @@ var testCases = []testCase{
 			Properties: map[xml.Name]Value{
 				elemTest: textValue{
 					Value: "testvalue",
-					Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de_DE"}}},
+					Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de-DE"}}},
 				},
 			},
 		},
-		pattern: []string{"<test:prop xml:lang=\"de_DE\">testvalue</test:prop>"},
+		pattern: []string{"<test:prop xml:lang=\"de-DE\">testvalue</test:prop>"},
+	},
+	{
+		desc: "xml:lang on URI value",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				elemTest: uriValue{
+					Value: testURL,
+					Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de-DE"}}},
+				},
+			},
+		},
+		pattern: []string{"<test:prop xml:lang=\"de-DE\" rdf:resource=\"http://example.com\"/>"},
 	},
 	{
 		desc: "xml:lang on structure field",
@@ -126,10 +141,8 @@ var testCases = []testCase{
 			},
 		},
 		pattern: []string{
-			"<test:prop>",
-			"<rdf:Description>",
+			"<test:prop rdf:parseType=\"Resource\">",
 			"<test:a xml:lang=\"de\">Hallo</test:a>",
-			"</rdf:Description>",
 			"</test:prop>",
 		},
 	},
@@ -173,8 +186,9 @@ var testCases = []testCase{
 			},
 		},
 		pattern: []string{
-			"<test:prop>",
-			"<rdf:Description rdf:value=\"test value\" test:q=\"qualifier\"/>",
+			"<test:prop rdf:parseType=\"Resource\">",
+			"<rdf:value>test value</rdf:value>",
+			"<test:q>qualifier</test:q>",
 			"</test:prop>",
 		},
 	},
@@ -188,7 +202,7 @@ var testCases = []testCase{
 						{elemTestQ, textValue{
 							Value: "qualifier",
 							Q: []Qualifier{
-								{attrXMLLang, textValue{Value: "te_ST"}},
+								{attrXMLLang, textValue{Value: "te-ST"}},
 							},
 						}},
 					},
@@ -196,10 +210,29 @@ var testCases = []testCase{
 			},
 		},
 		pattern: []string{
-			"<test:prop>",
-			"<rdf:Description rdf:value=\"test value\">",
-			"<test:q xml:lang=\"te_ST\">qualifier</test:q>",
-			"</rdf:Description>",
+			"<test:prop rdf:parseType=\"Resource\">",
+			"<rdf:value>test value</rdf:value>",
+			"<test:q xml:lang=\"te-ST\">qualifier</test:q>",
+			"</test:prop>",
+		},
+	},
+	{
+		desc: "general qualfiers on URI value",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				elemTest: uriValue{
+					Value: testURL,
+					Q: []Qualifier{
+						{attrXMLLang, textValue{Value: "te-ST"}},
+						{elemTestQ, textValue{Value: "qualifier"}},
+					},
+				},
+			},
+		},
+		pattern: []string{
+			"<test:prop xml:lang=\"te-ST\" rdf:parseType=\"Resource\">",
+			"<rdf:value rdf:resource=\"http://example.com\"/>",
+			"<test:q>qualifier</test:q>",
 			"</test:prop>",
 		},
 	},
@@ -223,7 +256,7 @@ func TestRoundTrip(t *testing.T) {
 			pat := regexp.MustCompile(strings.Join(parts, `\s*`))
 
 			if pat.FindString(bodyString) == "" {
-				t.Fatalf("missing property %q in test case %d", tc.pattern, i)
+				t.Fatalf("%d: wrong encoding: want\n%q", i, tc.pattern)
 			}
 
 			out, err := Read(bytes.NewReader(body))

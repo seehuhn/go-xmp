@@ -18,7 +18,6 @@ package xmp
 
 import (
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -99,7 +98,7 @@ tokenLoop:
 				// including the start element, but not the end element.
 
 				start := propertyElement[0].(xml.StartElement)
-				val, _ := parsePropertyElement(start, propertyElement[1:], nil)
+				val := parsePropertyElement(start, propertyElement[1:], nil)
 				if val != nil {
 					p.Properties[start.Name] = val
 				}
@@ -127,7 +126,10 @@ tokenLoop:
 //
 // This implements the rules from appendix C.2.5 (Content of a nodeElement)
 // of ISO 16684-1:2011.
-func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Value, error) {
+//
+// Invalid XML is ignored, and the function decodes as much of the property
+// element as possible.  If no valid data is found, the function returns nil.
+func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Value {
 	tp := getProperyElementType(start, tokens)
 	switch tp {
 	case literalPropertyElt:
@@ -146,7 +148,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 				text += string(c)
 			}
 		}
-		return textValue{Value: text, Q: qq}, nil
+		return textValue{Value: text, Q: qq}
 
 	case resourcePropertyElt:
 		// A resourcePropertyElt most commonly represents an XMP struct or
@@ -188,7 +190,6 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 					break
 				}
 			}
-			// TODO(voss): check for rdf:value attributes, too
 			if attrIdx >= 0 || valueIdx >= 0 {
 				for _, a := range descStart.Attr {
 					if a.Name != elemRDFValue {
@@ -197,21 +198,21 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 				}
 
 				for _, f := range fields {
-					val, _ := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
 					if f.name != elemRDFValue {
+						val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
 						qq = append(qq, Qualifier{Name: f.name, Value: val})
 					}
 				}
 
 				if attrIdx >= 0 {
-					return textValue{Value: descStart.Attr[attrIdx].Value, Q: qq}, nil
+					return textValue{Value: descStart.Attr[attrIdx].Value, Q: qq}
 				}
 				f := fields[valueIdx]
-				value, _ := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
-				if value == nil {
-					value = textValue{Value: ""}
+				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
+				if val == nil {
+					val = textValue{Value: ""}
 				}
-				return value, nil
+				return val
 			}
 
 			res := structValue{
@@ -224,13 +225,13 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 				}
 			}
 			for _, f := range fields {
-				val, _ := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
+				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
 				if val != nil {
 					res.Value[f.name] = val
 				}
 			}
 
-			return res, nil
+			return res
 		case len(children) == 1 && (children[0].name == elemRDFBag || children[0].name == elemRDFSeq || children[0].name == elemRDFAlt):
 			var tp arrayType
 			switch children[0].name {
@@ -249,12 +250,12 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 				Q:     qq,
 			}
 			for _, i := range items {
-				val, _ := parsePropertyElement(inner[i.start].(xml.StartElement), inner[i.start+1:i.end], nil)
+				val := parsePropertyElement(inner[i.start].(xml.StartElement), inner[i.start+1:i.end], nil)
 				if val != nil {
 					res.Value = append(res.Value, val)
 				}
 			}
-			return res, nil
+			return res
 		default:
 			panic("not implemented")
 		}
@@ -266,7 +267,50 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 		// is commonly used in XMP as a cleaner way to represent a struct.
 		//
 		// See appendix C.2.9 (The parseTypeResourcePropertyElt) of ISO 16684-1:2011.
-		panic("not implemented")
+
+		for _, a := range start.Attr {
+			if a.Name == attrXMLLang {
+				qq = append(qq, Qualifier{Name: a.Name, Value: textValue{Value: a.Value}})
+			}
+		}
+
+		fields := getChildElements(tokens)
+
+		// General qualifiers are distinguished from structure elements by the
+		// presence of an rdf:value field
+		isQualifierStruct := false
+		for _, f := range fields {
+			if f.name == elemRDFValue {
+				isQualifierStruct = true
+				break
+			}
+		}
+		if isQualifierStruct {
+			var valueIndex int
+			for i, f := range fields {
+				if f.name == elemRDFValue {
+					valueIndex = i
+				} else {
+					val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
+					qq = append(qq, Qualifier{Name: f.name, Value: val})
+				}
+			}
+			f := fields[valueIndex]
+			return parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], qq)
+		}
+
+		// this is a structure element
+		res := structValue{
+			Value: make(map[xml.Name]Value),
+			Q:     qq,
+		}
+		for _, f := range fields {
+			val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
+			if val != nil {
+				res.Value[f.name] = val
+			}
+		}
+		return res
 
 	case emptyPropertyElt:
 		// An emptyPropertyElt is an element with no contained content, just a
@@ -311,9 +355,9 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 			}
 			uri, err := url.Parse(uriString)
 			if err != nil {
-				return nil, err
+				return nil
 			}
-			return uriValue{Value: uri, Q: qq}, nil
+			return uriValue{Value: uri, Q: qq}
 		case isEmptyValue:
 			// If there are no attributes other than xml:lang, rdf:ID, or
 			// rdf:nodeID, then this is a simple property with an empty value.
@@ -322,10 +366,10 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 					res := textValue{
 						Q: Q{{Name: attrXMLLang, Value: textValue{Value: a.Value}}},
 					}
-					return res, nil
+					return res
 				}
 			}
-			return textValue{}, nil
+			return textValue{}
 		default:
 			// Otherwise, this is a struct, and the attributes other than
 			// xml:lang, rdf:ID, or rdf:nodeID are the fields.
@@ -333,7 +377,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) (Val
 		}
 
 	case parseTypeLiteralPropertyElt, parseTypeCollectionPropertyElt, parseTypeOtherPropertyElt:
-		return nil, errors.New("parseType not allowed in XMP")
+		return nil // not allowed in XMP
 
 	default:
 		panic("unreachable")
