@@ -19,6 +19,7 @@ package xmp
 import (
 	"bytes"
 	"encoding/xml"
+	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -63,7 +64,7 @@ var encodeTestCases = []encodeTestCase{
 		desc: "simple non-URI value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{Value: "testvalue"},
+				elemTest: TextValue{Value: "testvalue"},
 			},
 		},
 		pattern: []string{"<test:prop>testvalue</test:prop>"},
@@ -72,7 +73,7 @@ var encodeTestCases = []encodeTestCase{
 		desc: "simple URI value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: uriValue{Value: testURL},
+				elemTest: URIValue{Value: testURL},
 			},
 		},
 		pattern: []string{"<test:prop rdf:resource=\"http://example.com\"/>"},
@@ -81,7 +82,7 @@ var encodeTestCases = []encodeTestCase{
 		desc: "XML markup in text value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{Value: "<b>test</b>"},
+				elemTest: TextValue{Value: "<b>test</b>"},
 			},
 		},
 		pattern: []string{"<test:prop>&lt;b&gt;test&lt;/b&gt;</test:prop>"},
@@ -90,11 +91,11 @@ var encodeTestCases = []encodeTestCase{
 		desc: "structure value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: structValue{
+				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1", Q: Q{{elemTestQ, textValue{Value: "q"}}}},
-						elemTestB: textValue{Value: "2", Q: Q{{elemTestQ, textValue{Value: "q"}}}},
-						elemTestC: textValue{Value: "3", Q: Q{{elemTestQ, textValue{Value: "q"}}}},
+						elemTestA: TextValue{Value: "1", Q: Q{{elemTestQ, TextValue{Value: "q"}}}},
+						elemTestB: TextValue{Value: "2", Q: Q{{elemTestQ, TextValue{Value: "q"}}}},
+						elemTestC: TextValue{Value: "3", Q: Q{{elemTestQ, TextValue{Value: "q"}}}},
 					},
 				},
 			},
@@ -111,11 +112,11 @@ var encodeTestCases = []encodeTestCase{
 		desc: "compact struct",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
-						elemTestB: textValue{Value: "2"},
-						elemTestC: textValue{Value: "3"},
+						elemTestA: TextValue{Value: "1"},
+						elemTestB: TextValue{Value: "2"},
+						elemTestC: TextValue{Value: "3"},
 					},
 				},
 			},
@@ -128,7 +129,7 @@ var encodeTestCases = []encodeTestCase{
 		desc: "empty structure ",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: structValue{
+				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: StructValue{
 					Value: map[xml.Name]Value{},
 				},
 			},
@@ -142,9 +143,9 @@ var encodeTestCases = []encodeTestCase{
 		desc: "xml:lang on property",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "testvalue",
-					Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de-DE"}}},
+					Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de-DE"}}},
 				},
 			},
 		},
@@ -154,9 +155,9 @@ var encodeTestCases = []encodeTestCase{
 		desc: "xml:lang on URI value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: uriValue{
+				elemTest: URIValue{
 					Value: testURL,
-					Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de-DE"}}},
+					Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de-DE"}}},
 				},
 			},
 		},
@@ -166,11 +167,11 @@ var encodeTestCases = []encodeTestCase{
 		desc: "xml:lang on structure field",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{
+						elemTestA: TextValue{
 							Value: "Hallo",
-							Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de"}}},
+							Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
 						},
 					},
 				},
@@ -186,16 +187,16 @@ var encodeTestCases = []encodeTestCase{
 		desc: "xml:lang on array item",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: arrayValue{
+				elemTest: ArrayValue{
 					Value: []Value{
-						textValue{Value: "a"},
-						textValue{
+						TextValue{Value: "a"},
+						TextValue{
 							Value: "b",
-							Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "fr"}}},
+							Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "fr"}}},
 						},
-						textValue{Value: "c"},
+						TextValue{Value: "c"},
 					},
-					Type: tpOrdered,
+					Type: Ordered,
 				},
 			},
 		},
@@ -213,10 +214,10 @@ var encodeTestCases = []encodeTestCase{
 		desc: "general qualfiers",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, uriValue{Value: &url.URL{Scheme: "http", Host: "example.com"}}},
+						{elemTestQ, URIValue{Value: &url.URL{Scheme: "http", Host: "example.com"}}},
 					},
 				},
 			},
@@ -232,13 +233,13 @@ var encodeTestCases = []encodeTestCase{
 		desc: "xml:lang on qualifier value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, textValue{
+						{elemTestQ, TextValue{
 							Value: "qualifier",
 							Q: []Qualifier{
-								{attrXMLLang, textValue{Value: "te-ST"}},
+								{attrXMLLang, TextValue{Value: "te-ST"}},
 							},
 						}},
 					},
@@ -256,11 +257,11 @@ var encodeTestCases = []encodeTestCase{
 		desc: "general qualfiers on URI value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: uriValue{
+				elemTest: URIValue{
 					Value: testURL,
 					Q: []Qualifier{
-						{attrXMLLang, textValue{Value: "te-ST"}},
-						{elemTestQ, textValue{Value: "qualifier"}},
+						{attrXMLLang, TextValue{Value: "te-ST"}},
+						{elemTestQ, TextValue{Value: "qualifier"}},
 					},
 				},
 			},
@@ -276,14 +277,18 @@ var encodeTestCases = []encodeTestCase{
 
 func TestRoundTrip(t *testing.T) {
 	for i, tc := range encodeTestCases {
+		opt := &WriterOptions{
+			Pretty: true,
+		}
 		t.Run(tc.desc, func(t *testing.T) {
-			body, err := tc.in.Encode(true)
+			buf := &bytes.Buffer{}
+			err := tc.in.Write(buf, opt)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			bodyString := string(body)
-			// fmt.Println(bodyString)
+			bodyString := buf.String()
+			fmt.Println(bodyString)
 
 			var parts []string
 			for _, p := range tc.pattern {
@@ -295,7 +300,7 @@ func TestRoundTrip(t *testing.T) {
 				t.Fatalf("%d: wrong encoding: want\n%q", i, tc.pattern)
 			}
 
-			out, err := Read(bytes.NewReader(body))
+			out, err := Read(strings.NewReader(bodyString))
 			if err != nil {
 				t.Fatal(err)
 			}

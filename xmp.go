@@ -46,17 +46,17 @@ func getValueNameSpaces(m map[string]struct{}, v Value) {
 	var q Q
 
 	switch v := v.(type) {
-	case textValue:
+	case TextValue:
 		q = v.Q
-	case uriValue:
+	case URIValue:
 		q = v.Q
-	case structValue:
+	case StructValue:
 		for key, val := range v.Value {
 			m[key.Space] = struct{}{}
 			getValueNameSpaces(m, val)
 		}
 		q = v.Q
-	case arrayValue:
+	case ArrayValue:
 		for _, val := range v.Value {
 			getValueNameSpaces(m, val)
 		}
@@ -71,9 +71,9 @@ func getValueNameSpaces(m map[string]struct{}, v Value) {
 	}
 }
 
-// Value is the value of an XMP property.
+// Value is one of [TextValue], [URIValue], [StructValue], or [ArrayValue].
 type Value interface {
-	Qualifiers() []Qualifier
+	isValue()
 }
 
 // A Qualifier can be used to attach additional information to a [Value].
@@ -82,20 +82,18 @@ type Qualifier struct {
 	Value Value
 }
 
-// Q is used to simplify the implementation of [Value] objects.
-// It provides a default implementation of the Qualifiers method.
+// Q stores the qualifiers of a [Value].
 type Q []Qualifier
 
-// Qualifiers implements part of the [Value] interface.
-func (q Q) Qualifiers() []Qualifier {
-	return q
+// isValue implements the [Value] interface.
+func (q Q) isValue() {
 }
 
 // getLang appends the xml:lang attribute if needed.
 func (q Q) getLang(attr []xml.Attr) []xml.Attr {
 	for _, q := range q {
 		if q.Name == attrXMLLang {
-			if v, ok := q.Value.(textValue); ok {
+			if v, ok := q.Value.(TextValue); ok {
 				// We don't need to use .makeName() here, since the prefix
 				// is always "xml".
 				attr = append(attr, xml.Attr{Name: attrXMLLang, Value: v.Value})
@@ -118,32 +116,33 @@ func (q Q) hasQualifiers() bool {
 // hasQualifiers returns true if there are any qualifiers other than xml:lang.
 func (q Q) allSimple() bool {
 	for _, q := range q {
-		if val, ok := q.Value.(textValue); !ok || len(val.Q) > 0 {
+		if val, ok := q.Value.(TextValue); !ok || len(val.Q) > 0 {
 			return false
 		}
 	}
 	return true
 }
 
-// textValue represents a simple non-URI value.
-type textValue struct {
+// TextValue is a simple text (i.e. non-URI) value.
+type TextValue struct {
 	Value string
 	Q
 }
 
-// uriValue represents a simple URI value.
-type uriValue struct {
+// URIValue is a simple URI value.
+type URIValue struct {
 	Value *url.URL
 	Q
 }
 
-type structValue struct {
+// StructValue is an XMP structure.
+type StructValue struct {
 	Value map[xml.Name]Value
 	Q
 }
 
 // fieldNames returns the field names sorted by namespace and local name.
-func (s *structValue) fieldNames() []xml.Name {
+func (s *StructValue) fieldNames() []xml.Name {
 	fieldNames := maps.Keys(s.Value)
 	sort.Slice(fieldNames, func(i, j int) bool {
 		if fieldNames[i].Space != fieldNames[j].Space {
@@ -156,25 +155,31 @@ func (s *structValue) fieldNames() []xml.Name {
 
 // allSimple returns true if all values are simple non-URI values, with no
 // qualifiers.
-func (s *structValue) allSimple() bool {
+func (s *StructValue) allSimple() bool {
 	for _, v := range s.Value {
-		if v, ok := v.(textValue); !ok || len(v.Q) > 0 {
+		if v, ok := v.(TextValue); !ok || len(v.Q) > 0 {
 			return false
 		}
 	}
 	return true
 }
 
-type arrayValue struct {
+// ArrayValue is an XMP array.
+// This can be an unordered array, an ordered array, or an alternative array,
+// depending on the value of the Type field.
+type ArrayValue struct {
 	Value []Value
-	Type  arrayType
+	Type  ArrayType
 	Q
 }
 
-type arrayType int
+// ArrayType represents the type of an XMP array (unordered, ordered, or
+// alternative).
+type ArrayType int
 
+// These are the possible array types in XMP.
 const (
-	tpUnordered arrayType = iota + 1
-	tpOrdered
-	tpAlternative
+	Unordered ArrayType = iota + 1
+	Ordered
+	Alternative
 )

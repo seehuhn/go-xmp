@@ -65,7 +65,7 @@ func getPrefix(nsToPrefix map[string]string, ns string) string {
 
 var defaultPrefix = map[string]string{
 	xmlNamespace:                                     "xml",
-	RDFNamespace:                                     "rdf",
+	rdfNamespace:                                     "rdf",
 	"http://ns.adobe.com/xap/1.0/":                   "xmp",
 	"http://ns.adobe.com/xap/1.0/mm/":                "xmpMM",     // XMP Media Management
 	"http://ns.adobe.com/xap/1.0/rights/":            "xmpRights", // XMP Rights Management
@@ -78,6 +78,6 @@ const (
 	// xmlNamespace is the namespace for XML.
 	xmlNamespace = "http://www.w3.org/XML/1998/namespace"
 
-	// RDFNamespace is the namespace for RDF.
-	RDFNamespace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	// rdfNamespace is the namespace for RDF.
+	rdfNamespace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 )

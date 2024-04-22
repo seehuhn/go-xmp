@@ -51,7 +51,7 @@ var decodeTestCases = []decodeTestCase{
 		in:   `<rdf:Description rdf:about=""><test:prop>testvalue</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{Value: "testvalue"},
+				elemTest: TextValue{Value: "testvalue"},
 			},
 		},
 	},
@@ -60,7 +60,7 @@ var decodeTestCases = []decodeTestCase{
 		in:   `<rdf:Description rdf:about=""><test:prop rdf:resource="http://example.com"/></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: uriValue{Value: &url.URL{Scheme: "http", Host: "example.com"}},
+				elemTest: URIValue{Value: &url.URL{Scheme: "http", Host: "example.com"}},
 			},
 		},
 	},
@@ -69,7 +69,7 @@ var decodeTestCases = []decodeTestCase{
 		in:   `<rdf:Description rdf:about=""><test:prop><![CDATA[</test:prop>]]></test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{Value: "</test:prop>"},
+				elemTest: TextValue{Value: "</test:prop>"},
 			},
 		},
 	},
@@ -84,11 +84,11 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
-						elemTestB: textValue{Value: "2"},
-						elemTestC: textValue{Value: "3"},
+						elemTestA: TextValue{Value: "1"},
+						elemTestB: TextValue{Value: "2"},
+						elemTestC: TextValue{Value: "3"},
 					},
 				},
 			},
@@ -105,13 +105,13 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: arrayValue{
+				elemTest: ArrayValue{
 					Value: []Value{
-						textValue{Value: "1"},
-						textValue{Value: "2"},
-						textValue{Value: "3"},
+						TextValue{Value: "1"},
+						TextValue{Value: "2"},
+						TextValue{Value: "3"},
 					},
-					Type: tpUnordered,
+					Type: Unordered,
 				},
 			},
 		},
@@ -127,13 +127,13 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: arrayValue{
+				elemTest: ArrayValue{
 					Value: []Value{
-						textValue{Value: "4"},
-						textValue{Value: "5"},
-						textValue{Value: "6"},
+						TextValue{Value: "4"},
+						TextValue{Value: "5"},
+						TextValue{Value: "6"},
 					},
-					Type: tpOrdered,
+					Type: Ordered,
 				},
 			},
 		},
@@ -149,13 +149,13 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: arrayValue{
+				elemTest: ArrayValue{
 					Value: []Value{
-						textValue{Value: "7"},
-						textValue{Value: "8"},
-						textValue{Value: "9"},
+						TextValue{Value: "7"},
+						TextValue{Value: "8"},
+						TextValue{Value: "9"},
 					},
-					Type: tpAlternative,
+					Type: Alternative,
 				},
 			},
 		},
@@ -165,9 +165,9 @@ var decodeTestCases = []decodeTestCase{
 		in:   `<rdf:Description rdf:about=""><test:prop xml:lang="de">Hallo</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "Hallo",
-					Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de"}}},
+					Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
 				},
 			},
 		},
@@ -177,9 +177,9 @@ var decodeTestCases = []decodeTestCase{
 		in:   `<rdf:Description rdf:about=""><test:prop rdf:resource="http://example.com" xml:lang="de"/></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: uriValue{
+				elemTest: URIValue{
 					Value: &url.URL{Scheme: "http", Host: "example.com"},
-					Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de"}}},
+					Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
 				},
 			},
 		},
@@ -195,13 +195,13 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
-						elemTestB: textValue{Value: "2"},
-						elemTestC: textValue{
+						elemTestA: TextValue{Value: "1"},
+						elemTestB: TextValue{Value: "2"},
+						elemTestC: TextValue{
 							Value: "drei",
-							Q:     Q{{Name: attrXMLLang, Value: textValue{Value: "de"}}},
+							Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
 						},
 					},
 				},
@@ -219,13 +219,13 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: arrayValue{
+				elemTest: ArrayValue{
 					Value: []Value{
-						textValue{Value: "zwei", Q: Q{{Name: attrXMLLang, Value: textValue{Value: "x-default"}}}},
-						textValue{Value: "two", Q: Q{{Name: attrXMLLang, Value: textValue{Value: "en"}}}},
-						textValue{Value: "zwei", Q: Q{{Name: attrXMLLang, Value: textValue{Value: "de-de"}}}},
+						TextValue{Value: "zwei", Q: Q{{Name: attrXMLLang, Value: TextValue{Value: "x-default"}}}},
+						TextValue{Value: "two", Q: Q{{Name: attrXMLLang, Value: TextValue{Value: "en"}}}},
+						TextValue{Value: "zwei", Q: Q{{Name: attrXMLLang, Value: TextValue{Value: "de-de"}}}},
 					},
-					Type: tpAlternative,
+					Type: Alternative,
 				},
 			},
 		},
@@ -240,12 +240,12 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "Hallo",
 					Q: Q{
-						{Name: elemTestQ, Value: textValue{
+						{Name: elemTestQ, Value: TextValue{
 							Value: "Eigenschaft",
-							Q:     []Qualifier{{Name: attrXMLLang, Value: textValue{Value: "de"}}},
+							Q:     []Qualifier{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
 						}},
 					},
 				},
@@ -264,10 +264,10 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, textValue{Value: "qualifier"}},
+						{elemTestQ, TextValue{Value: "qualifier"}},
 					},
 				},
 			},
@@ -285,10 +285,10 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: uriValue{
+				elemTest: URIValue{
 					Value: &url.URL{Scheme: "http", Host: "example.com"},
 					Q: []Qualifier{
-						{elemTestQ, textValue{Value: "qualifier"}},
+						{elemTestQ, TextValue{Value: "qualifier"}},
 					},
 				},
 			},
@@ -310,13 +310,13 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
-						elemTestB: textValue{Value: "2"},
-						elemTestC: textValue{
+						elemTestA: TextValue{Value: "1"},
+						elemTestB: TextValue{Value: "2"},
+						elemTestC: TextValue{
 							Value: "3",
-							Q:     Q{{elemTestQ, textValue{Value: "qualifier"}}},
+							Q:     Q{{elemTestQ, TextValue{Value: "qualifier"}}},
 						},
 					},
 				},
@@ -339,14 +339,14 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: arrayValue{
+				elemTest: ArrayValue{
 					Value: []Value{
-						textValue{Value: "eins"},
-						textValue{Value: "zwei"},
-						textValue{Value: "drei",
-							Q: Q{{elemTestQ, textValue{Value: "qualifier"}}}},
+						TextValue{Value: "eins"},
+						TextValue{Value: "zwei"},
+						TextValue{Value: "drei",
+							Q: Q{{elemTestQ, TextValue{Value: "qualifier"}}}},
 					},
-					Type: tpOrdered,
+					Type: Ordered,
 				},
 			},
 		},
@@ -362,7 +362,7 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "test value",
 				},
 			},
@@ -374,7 +374,7 @@ var decodeTestCases = []decodeTestCase{
 		in:   `<rdf:Description rdf:about="" test:prop="value"/>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{Value: "value"},
+				elemTest: TextValue{Value: "value"},
 			},
 		},
 	},
@@ -387,11 +387,11 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
-						elemTestB: textValue{Value: "2"},
-						elemTestC: textValue{Value: "3"},
+						elemTestA: TextValue{Value: "1"},
+						elemTestB: TextValue{Value: "2"},
+						elemTestC: TextValue{Value: "3"},
 					},
 				},
 			},
@@ -404,11 +404,11 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
-						elemTestB: textValue{Value: "2"},
-						elemTestC: textValue{Value: "3"},
+						elemTestA: TextValue{Value: "1"},
+						elemTestB: TextValue{Value: "2"},
+						elemTestC: TextValue{Value: "3"},
 					},
 				},
 			},
@@ -425,10 +425,10 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, textValue{Value: "qualifier"}},
+						{elemTestQ, TextValue{Value: "qualifier"}},
 					},
 				},
 			},
@@ -443,10 +443,10 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, textValue{Value: "qualifier"}},
+						{elemTestQ, TextValue{Value: "qualifier"}},
 					},
 				},
 			},
@@ -461,11 +461,11 @@ var decodeTestCases = []decodeTestCase{
 				</test:prop></rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
-						elemTestB: textValue{Value: "2"},
-						elemTestC: textValue{Value: "3"},
+						elemTestA: TextValue{Value: "1"},
+						elemTestB: TextValue{Value: "2"},
+						elemTestC: TextValue{Value: "3"},
 					},
 				},
 			},
@@ -481,10 +481,10 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: textValue{
+				elemTest: TextValue{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, textValue{Value: "qualifier"}},
+						{elemTestQ, TextValue{Value: "qualifier"}},
 					},
 				},
 			},
@@ -497,11 +497,11 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
-						elemTestB: textValue{Value: "2"},
-						elemTestC: textValue{Value: "3"},
+						elemTestA: TextValue{Value: "1"},
+						elemTestB: TextValue{Value: "2"},
+						elemTestC: TextValue{Value: "3"},
 					},
 				},
 			},
@@ -519,13 +519,13 @@ var decodeTestCases = []decodeTestCase{
 		</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
+						elemTestA: TextValue{Value: "1"},
 					},
 					Q: Q{{
 						Name:  attrRDFType,
-						Value: uriValue{Value: &url.URL{Scheme: "http", Host: "ns.seehuhn.de", Path: "/test/", Fragment: "Type"}},
+						Value: URIValue{Value: &url.URL{Scheme: "http", Host: "ns.seehuhn.de", Path: "/test/", Fragment: "Type"}},
 					}},
 				},
 			},
@@ -545,13 +545,13 @@ var decodeTestCases = []decodeTestCase{
 		</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				elemTest: structValue{
+				elemTest: StructValue{
 					Value: map[xml.Name]Value{
-						elemTestA: textValue{Value: "1"},
+						elemTestA: TextValue{Value: "1"},
 					},
 					Q: Q{{
 						Name:  attrRDFType,
-						Value: uriValue{Value: &url.URL{Scheme: "http", Host: "ns.seehuhn.de", Path: "/test/", Fragment: "Type"}},
+						Value: URIValue{Value: &url.URL{Scheme: "http", Host: "ns.seehuhn.de", Path: "/test/", Fragment: "Type"}},
 					}},
 				},
 			},
@@ -565,9 +565,9 @@ var decodeTestCases = []decodeTestCase{
 			</rdf:Description>`,
 		out: &Packet{
 			Properties: map[xml.Name]Value{
-				{Space: "http://example.com", Local: "prop"}: structValue{
+				{Space: "http://example.com", Local: "prop"}: StructValue{
 					Value: map[xml.Name]Value{
-						{Space: "http://example.com", Local: "q"}: textValue{Value: ""},
+						{Space: "http://example.com", Local: "q"}: TextValue{Value: ""},
 					},
 				},
 			},
@@ -601,8 +601,8 @@ func TestIsValidPropertyName(t *testing.T) {
 		{xml.Name{Space: "http://example.com", Local: ""}, false},
 
 		{attrRDFType, true}, // the only valid name in RDF namespace
-		{xml.Name{Space: RDFNamespace, Local: "resource"}, false},
-		{xml.Name{Space: RDFNamespace, Local: "p"}, false},
+		{xml.Name{Space: rdfNamespace, Local: "resource"}, false},
+		{xml.Name{Space: rdfNamespace, Local: "p"}, false},
 		{elemRDFValue, false},
 
 		// all of the xml: namespace is forbidden
@@ -630,8 +630,8 @@ func TestIsValidQualifierName(t *testing.T) {
 		{xml.Name{Space: "http://example.com", Local: ""}, false},
 
 		{attrRDFType, true}, // the only valid name in RDF namespace
-		{xml.Name{Space: RDFNamespace, Local: "resource"}, false},
-		{xml.Name{Space: RDFNamespace, Local: "q"}, false},
+		{xml.Name{Space: rdfNamespace, Local: "resource"}, false},
+		{xml.Name{Space: rdfNamespace, Local: "q"}, false},
 		{elemRDFValue, false},
 
 		{attrXMLLang, true}, // the only valid name in XML namespace
@@ -652,11 +652,12 @@ func FuzzRoundTrip(f *testing.F) {
 		f.Add([]byte(in))
 	}
 	for _, tc := range encodeTestCases {
-		body, err := tc.in.Encode(true)
+		buf := &bytes.Buffer{}
+		err := tc.in.Write(buf, nil)
 		if err != nil {
 			f.Fatal(err)
 		}
-		f.Add(body)
+		f.Add(buf.Bytes())
 	}
 
 	f.Fuzz(func(t *testing.T, body []byte) {
@@ -665,10 +666,12 @@ func FuzzRoundTrip(f *testing.F) {
 			return
 		}
 
-		body2, err := p1.Encode(true)
+		buf := &bytes.Buffer{}
+		err = p1.Write(buf, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
+		body2 := buf.Bytes()
 
 		p2, err := Read(bytes.NewReader(body2))
 		if err != nil {

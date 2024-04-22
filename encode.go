@@ -17,22 +17,25 @@
 package xmp
 
 import (
-	"bytes"
 	"encoding/xml"
-	"net/url"
+	"io"
 	"sort"
 
 	"golang.org/x/exp/maps"
 	"seehuhn.de/go/xmp/jvxml"
 )
 
-// Encode encodes the packet to an XML byte slice.
-func (p *Packet) Encode(pretty bool) ([]byte, error) {
-	ns := p.getNamespaces()
+// WriterOptions can be used to control the output format of the [Packet.Write]
+// method.
+type WriterOptions struct {
+	Pretty bool
+}
 
-	e, err := newEncoder(p.About, ns, pretty)
+// Write writes the XMP packet to the given writer.
+func (p *Packet) Write(w io.Writer, opt *WriterOptions) error {
+	e, err := p.newEncoder(w, opt)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	names := maps.Keys(p.Properties)
@@ -51,31 +54,33 @@ func (p *Packet) Encode(pretty bool) ([]byte, error) {
 		for _, t := range tokens {
 			err = e.EncodeToken(t)
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 
 	err = e.Close()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return e.buf.Bytes(), nil
+	return nil
 }
 
 // An encoder writes XMP data to an output stream.
 type encoder struct {
-	buf *bytes.Buffer
+	w io.Writer
 	*jvxml.Encoder
 	nsToPrefix map[string]string
 	prefixToNS map[string]string
 }
 
 // newEncoder returns a new encoder that writes to w.
-func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}, pretty bool) (*encoder, error) {
+func (p *Packet) newEncoder(w io.Writer, opt *WriterOptions) (*encoder, error) {
+	nsUsed := p.getNamespaces()
+
 	nsUsed[xmlNamespace] = struct{}{}
-	nsUsed[RDFNamespace] = struct{}{}
+	nsUsed[rdfNamespace] = struct{}{}
 
 	nsToPrefix := make(map[string]string)
 	prefixToNS := make(map[string]string)
@@ -96,13 +101,12 @@ func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}, pretty bool) (*en
 		prefixToNS[pfx] = ns
 	}
 
-	buf := &bytes.Buffer{}
-	enc := jvxml.NewEncoder(buf)
-	if pretty {
+	enc := jvxml.NewEncoder(w)
+	if opt != nil && opt.Pretty {
 		enc.Indent("", "\t")
 	}
 	e := &encoder{
-		buf:        buf,
+		w:          w,
 		Encoder:    enc,
 		nsToPrefix: nsToPrefix,
 		prefixToNS: prefixToNS,
@@ -132,7 +136,7 @@ func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}, pretty bool) (*en
 		attrs = append(attrs, xml.Attr{Name: xml.Name{Local: "xmlns:" + pfx}, Value: ns})
 	}
 	err = e.EncodeToken(xml.StartElement{
-		Name: e.makeName(RDFNamespace, "RDF"),
+		Name: e.makeName(rdfNamespace, "RDF"),
 		Attr: attrs,
 	})
 	if err != nil {
@@ -141,12 +145,12 @@ func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}, pretty bool) (*en
 
 	attrs = attrs[:0]
 	about := ""
-	if aboutURL != nil {
-		about = aboutURL.String()
+	if p.About != nil {
+		about = p.About.String()
 	}
-	attrs = append(attrs, xml.Attr{Name: e.makeName(RDFNamespace, "about"), Value: about})
+	attrs = append(attrs, xml.Attr{Name: e.makeName(rdfNamespace, "about"), Value: about})
 	err = e.EncodeToken(xml.StartElement{
-		Name: e.makeName(RDFNamespace, "Description"),
+		Name: e.makeName(rdfNamespace, "Description"),
 		Attr: attrs,
 	})
 	if err != nil {
@@ -160,14 +164,14 @@ func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}, pretty bool) (*en
 // written to the encoder.
 func (e *encoder) Close() error {
 	err := e.EncodeToken(xml.EndElement{
-		Name: e.makeName(RDFNamespace, "Description"),
+		Name: e.makeName(rdfNamespace, "Description"),
 	})
 	if err != nil {
 		return err
 	}
 
 	err = e.EncodeToken(xml.EndElement{
-		Name: e.makeName(RDFNamespace, "RDF"),
+		Name: e.makeName(rdfNamespace, "RDF"),
 	})
 	if err != nil {
 		return err
@@ -202,15 +206,15 @@ func (e *encoder) makeName(ns, local string) xml.Name {
 }
 
 func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value) []xml.Token {
-	rdfValue := e.makeName(RDFNamespace, "value")
-	rdfResource := e.makeName(RDFNamespace, "resource")
+	rdfValue := e.makeName(rdfNamespace, "value")
+	rdfResource := e.makeName(rdfNamespace, "resource")
 	attrParseTypeResource := xml.Attr{
-		Name:  e.makeName(RDFNamespace, "parseType"),
+		Name:  e.makeName(rdfNamespace, "parseType"),
 		Value: "Resource",
 	}
 
 	switch val := value.(type) {
-	case textValue:
+	case TextValue:
 		// Possible ways to encode the value:
 		//
 		// option 1 (no non-lang qualifiers):
@@ -255,14 +259,14 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 		} else if val.Q.allSimple() { // use option 5
 			attr := make([]xml.Attr, 0, len(val.Q)+1)
 			for _, q := range val.Q {
-				attr = append(attr, xml.Attr{Name: e.makeName(q.Name.Space, q.Name.Local), Value: q.Value.(textValue).Value})
+				attr = append(attr, xml.Attr{Name: e.makeName(q.Name.Space, q.Name.Local), Value: q.Value.(TextValue).Value})
 			}
 			attr = append(attr, xml.Attr{Name: rdfValue, Value: val.Value})
 			tokens = append(tokens, jvxml.EmptyElement{Name: name, Attr: attr})
 		} else { // use option 4
 			attr := val.Q.getLang(nil)
 			attr = append(attr, xml.Attr{
-				Name:  e.makeName(RDFNamespace, "parseType"),
+				Name:  e.makeName(rdfNamespace, "parseType"),
 				Value: "Resource",
 			})
 			tokens = append(tokens,
@@ -280,7 +284,7 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 			tokens = append(tokens, xml.EndElement{Name: name})
 		}
 
-	case uriValue:
+	case URIValue:
 		// Possible ways to encode the value:
 		//
 		// option 1 (no non-lang qualifiers):
@@ -311,7 +315,7 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 
 		if val.Q.hasQualifiers() { // use option 4
 			attr = append(attr, xml.Attr{
-				Name:  e.makeName(RDFNamespace, "parseType"),
+				Name:  e.makeName(rdfNamespace, "parseType"),
 				Value: "Resource",
 			})
 			tokens = append(tokens,
@@ -337,7 +341,7 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 			)
 		}
 
-	case structValue:
+	case StructValue:
 		// Possible ways to encode the value:
 		//
 		// option 1a (no non-lang qualifiers):
@@ -416,7 +420,7 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 		} else if val.allSimple() && len(val.Value) > 0 { // use option 1c
 			for _, fieldName := range fieldNames {
 				fName := e.makeName(fieldName.Space, fieldName.Local)
-				attr = append(attr, xml.Attr{Name: fName, Value: val.Value[fieldName].(textValue).Value})
+				attr = append(attr, xml.Attr{Name: fName, Value: val.Value[fieldName].(TextValue).Value})
 			}
 			tokens = append(tokens, jvxml.EmptyElement{Name: name, Attr: attr})
 		} else { // use option 1b
@@ -429,7 +433,7 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 			tokens = append(tokens, xml.EndElement{Name: name})
 		}
 
-	case arrayValue:
+	case ArrayValue:
 		// Possible ways to encode the value:
 		//
 		// option 1 (no non-lang qualifiers):
@@ -480,17 +484,17 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 
 		var env string
 		switch val.Type {
-		case tpUnordered:
+		case Unordered:
 			env = "Bag"
-		case tpOrdered:
+		case Ordered:
 			env = "Seq"
-		case tpAlternative:
+		case Alternative:
 			env = "Alt"
 		default:
 			panic("unexpected array type")
 		}
-		envName := e.makeName(RDFNamespace, env)
-		liName := e.makeName(RDFNamespace, "li")
+		envName := e.makeName(rdfNamespace, env)
+		liName := e.makeName(rdfNamespace, "li")
 
 		if val.Q.hasQualifiers() { // use option 4
 			attr = append(attr, attrParseTypeResource)
