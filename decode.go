@@ -63,6 +63,10 @@ tokenLoop:
 						var aboutURL *url.URL
 						if a.Value != "" {
 							aboutURL, _ = url.Parse(a.Value)
+							if aboutURL != nil && aboutURL.String() == "" {
+								// This is triggered when a.Value is "//#".
+								aboutURL = nil
+							}
 						}
 						if p.About == nil {
 							p.About = aboutURL
@@ -133,10 +137,9 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Valu
 		//
 		// See appendix C.2.7 (The literalPropertyElt) of ISO 16684-1:2011.
 		for _, a := range start.Attr {
-			if !isValidQualifierName(a.Name) {
-				continue
+			if isValidQualifierName(a.Name) {
+				qq = append(qq, Qualifier{Name: a.Name, Value: TextValue{Value: a.Value}})
 			}
-			qq = append(qq, Qualifier{Name: a.Name, Value: TextValue{Value: a.Value}})
 		}
 
 		var text string
@@ -200,7 +203,9 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Valu
 				for _, f := range fields {
 					if isValidQualifierName(f.name) { // this excludes elemRDFValue
 						val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
-						qq = append(qq, Qualifier{Name: f.name, Value: val})
+						if val != nil {
+							qq = append(qq, Qualifier{Name: f.name, Value: val})
+						}
 					}
 				}
 
@@ -280,9 +285,11 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Valu
 			}
 			if valueIdx >= 0 {
 				for _, f := range fields {
-					if f.name != elemRDFValue {
+					if isValidQualifierName(f.name) {
 						val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
-						qq = append(qq, Qualifier{Name: f.name, Value: val})
+						if val != nil {
+							qq = append(qq, Qualifier{Name: f.name, Value: val})
+						}
 					}
 				}
 
@@ -299,6 +306,9 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Valu
 				Q:     qq,
 			}
 			for _, f := range fields {
+				if !isValidPropertyName(f.name) {
+					continue
+				}
 				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
 				if val != nil {
 					res.Value[f.name] = val
@@ -338,9 +348,11 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Valu
 			for i, f := range fields {
 				if f.name == elemRDFValue {
 					valueIndex = i
-				} else {
+				} else if isValidQualifierName(f.name) {
 					val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
-					qq = append(qq, Qualifier{Name: f.name, Value: val})
+					if val != nil {
+						qq = append(qq, Qualifier{Name: f.name, Value: val})
+					}
 				}
 			}
 			f := fields[valueIndex]
@@ -353,6 +365,9 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Valu
 			Q:     qq,
 		}
 		for _, f := range fields {
+			if !isValidPropertyName(f.name) {
+				continue
+			}
 			val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
 			if val != nil {
 				res.Value[f.name] = val

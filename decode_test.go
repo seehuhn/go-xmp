@@ -660,6 +660,16 @@ func FuzzRoundTrip(f *testing.F) {
 		f.Add(buf.Bytes())
 	}
 
+	urlCmp := cmp.Comparer(func(u1, u2 *url.URL) bool {
+		if u1 == nil && u2 == nil {
+			return true
+		}
+		if u1 == nil || u2 == nil {
+			return false
+		}
+		return u1.String() == u2.String()
+	})
+
 	f.Fuzz(func(t *testing.T, body []byte) {
 		p1, err := Read(bytes.NewReader(body))
 		if err != nil {
@@ -678,7 +688,7 @@ func FuzzRoundTrip(f *testing.F) {
 			t.Fatal(err)
 		}
 
-		if d := cmp.Diff(p1, p2); d != "" {
+		if d := cmp.Diff(p1, p2, urlCmp); d != "" {
 			fmt.Println()
 			fmt.Println(string(body))
 			fmt.Println()

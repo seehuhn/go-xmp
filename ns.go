@@ -25,8 +25,8 @@ import (
 
 // getPrefix chooses a new prefix for the given namespace.
 // The new prefix is chosen to be different from the ones already in the
-// nsToPrefix map.
-func getPrefix(nsToPrefix map[string]string, ns string) string {
+// prefixToNS map.
+func getPrefix(prefixToNS map[string]string, ns string) string {
 	// The following code is a modified version of code from
 	// encoding/xml/marshal.go in the Go standard library.
 
@@ -47,11 +47,11 @@ func getPrefix(nsToPrefix map[string]string, ns string) string {
 		prefix = "_" + prefix
 	}
 
-	if nsToPrefix[prefix] != "" {
+	if prefixToNS[prefix] != "" {
 		// Name is taken.  Find a better one.
-		idx := len(nsToPrefix) + 1
+		idx := len(prefixToNS) + 1
 		for {
-			if id := prefix + "_" + strconv.Itoa(idx); nsToPrefix[id] == "" {
+			if id := prefix + "_" + strconv.Itoa(idx); prefixToNS[id] == "" {
 				prefix = id
 				break
 			}

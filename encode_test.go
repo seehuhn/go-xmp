@@ -19,7 +19,6 @@ package xmp
 import (
 	"bytes"
 	"encoding/xml"
-	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -288,7 +287,7 @@ func TestRoundTrip(t *testing.T) {
 			}
 
 			bodyString := buf.String()
-			fmt.Println(bodyString)
+			// fmt.Println(bodyString)
 
 			var parts []string
 			for _, p := range tc.pattern {

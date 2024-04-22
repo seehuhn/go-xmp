@@ -33,6 +33,12 @@ type Packet struct {
 	About *url.URL
 }
 
+func NewPacket() *Packet {
+	return &Packet{
+		Properties: make(map[xml.Name]Value),
+	}
+}
+
 func (p *Packet) getNamespaces() map[string]struct{} {
 	m := make(map[string]struct{})
 	for key, value := range p.Properties {
@@ -62,7 +68,7 @@ func getValueNameSpaces(m map[string]struct{}, v Value) {
 		}
 		q = v.Q
 	default:
-		panic("unexpected value type")
+		panic("unexpected value type") // TODO(voss): remove
 	}
 
 	for _, q := range q {

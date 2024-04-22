@@ -96,7 +96,7 @@ func (p *Packet) newEncoder(w io.Writer, opt *WriterOptions) (*encoder, error) {
 		if _, alreadyDone := nsToPrefix[ns]; alreadyDone {
 			continue
 		}
-		pfx := getPrefix(nsToPrefix, ns)
+		pfx := getPrefix(prefixToNS, ns)
 		nsToPrefix[ns] = pfx
 		prefixToNS[pfx] = ns
 	}

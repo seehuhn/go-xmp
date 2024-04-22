@@ -32,3 +32,17 @@ func TestDefaultPrefix(t *testing.T) {
 		seen[p] = true
 	}
 }
+
+func TestGetPrefix(t *testing.T) {
+	m := map[string]string{
+		"a": "http://ns.seehuhn.de/test/a/#",
+	}
+	p := getPrefix(m, "http://ns.seehuhn.de/test/b/#")
+	if p != "b" {
+		t.Errorf("unexpected prefix %q", p)
+	}
+	p = getPrefix(m, "http://ns.seehuhn.de/test/other/a/#")
+	if p == "a" {
+		t.Errorf("unexpected prefix %q", p)
+	}
+}
