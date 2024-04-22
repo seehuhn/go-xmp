@@ -19,7 +19,6 @@ package xmp
 import (
 	"bytes"
 	"encoding/xml"
-	"fmt"
 	"net/url"
 	"regexp"
 	"strings"
@@ -29,22 +28,37 @@ import (
 )
 
 var (
-	elemTest  = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "prop"}
-	elemTestA = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "a"}
-	elemTestB = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "b"}
-	elemTestC = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "c"}
-	elemTestQ = xml.Name{Space: "http://ns.seehuhn.de/test/", Local: "q"}
+	elemTest  = xml.Name{Space: "http://ns.seehuhn.de/test/#", Local: "prop"}
+	elemTestA = xml.Name{Space: "http://ns.seehuhn.de/test/#", Local: "a"}
+	elemTestB = xml.Name{Space: "http://ns.seehuhn.de/test/#", Local: "b"}
+	elemTestC = xml.Name{Space: "http://ns.seehuhn.de/test/#", Local: "c"}
+	elemTestQ = xml.Name{Space: "http://ns.seehuhn.de/test/#", Local: "q"}
 
 	testURL = &url.URL{Scheme: "http", Host: "example.com"}
 )
 
-type testCase struct {
+type encodeTestCase struct {
 	desc    string
 	in      *Packet
 	pattern []string
 }
 
-var testCases = []testCase{
+var encodeTestCases = []encodeTestCase{
+	{
+		desc: "without about URL",
+		in: &Packet{
+			Properties: map[xml.Name]Value{},
+		},
+		pattern: []string{"<rdf:Description rdf:about=\"\">"},
+	},
+	{
+		desc: "with about URL",
+		in: &Packet{
+			Properties: map[xml.Name]Value{},
+			About:      testURL,
+		},
+		pattern: []string{"<rdf:Description rdf:about=\"http://example.com\">"},
+	},
 	{
 		desc: "simple non-URI value",
 		in: &Packet{
@@ -73,10 +87,10 @@ var testCases = []testCase{
 		pattern: []string{"<test:prop>&lt;b&gt;test&lt;/b&gt;</test:prop>"},
 	},
 	{
-		desc: "struct value",
+		desc: "structure value",
 		in: &Packet{
 			Properties: map[xml.Name]Value{
-				{Space: "http://ns.seehuhn.de/test/", Local: "s"}: structValue{
+				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: structValue{
 					Value: map[xml.Name]Value{
 						elemTestA: textValue{Value: "1", Q: Q{{elemTestQ, textValue{Value: "q"}}}},
 						elemTestB: textValue{Value: "2", Q: Q{{elemTestQ, textValue{Value: "q"}}}},
@@ -87,18 +101,40 @@ var testCases = []testCase{
 		},
 		pattern: []string{
 			"<test:s rdf:parseType=\"Resource\">",
-			"<test:a rdf:parseType=\"Resource\">",
-			"<rdf:value>1</rdf:value>",
-			"<test:q>q</test:q>",
-			"</test:a>",
-			"<test:b rdf:parseType=\"Resource\">",
-			"<rdf:value>2</rdf:value>",
-			"<test:q>q</test:q>",
-			"</test:b>",
-			"<test:c rdf:parseType=\"Resource\">",
-			"<rdf:value>3</rdf:value>",
-			"<test:q>q</test:q>",
-			"</test:c>",
+			"<test:a test:q=\"q\" rdf:value=\"1\"/>",
+			"<test:b test:q=\"q\" rdf:value=\"2\"/>",
+			"<test:c test:q=\"q\" rdf:value=\"3\"/>",
+			"</test:s>",
+		},
+	},
+	{
+		desc: "compact struct",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				elemTest: structValue{
+					Value: map[xml.Name]Value{
+						elemTestA: textValue{Value: "1"},
+						elemTestB: textValue{Value: "2"},
+						elemTestC: textValue{Value: "3"},
+					},
+				},
+			},
+		},
+		pattern: []string{
+			"<test:prop test:a=\"1\" test:b=\"2\" test:c=\"3\"/>",
+		},
+	},
+	{
+		desc: "empty structure ",
+		in: &Packet{
+			Properties: map[xml.Name]Value{
+				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: structValue{
+					Value: map[xml.Name]Value{},
+				},
+			},
+		},
+		pattern: []string{
+			"<test:s rdf:parseType=\"Resource\">",
 			"</test:s>",
 		},
 	},
@@ -180,7 +216,7 @@ var testCases = []testCase{
 				elemTest: textValue{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, textValue{Value: "qualifier"}},
+						{elemTestQ, uriValue{Value: &url.URL{Scheme: "http", Host: "example.com"}}},
 					},
 				},
 			},
@@ -188,7 +224,7 @@ var testCases = []testCase{
 		pattern: []string{
 			"<test:prop rdf:parseType=\"Resource\">",
 			"<rdf:value>test value</rdf:value>",
-			"<test:q>qualifier</test:q>",
+			"<test:q rdf:resource=\"http://example.com\"/>",
 			"</test:prop>",
 		},
 	},
@@ -239,7 +275,7 @@ var testCases = []testCase{
 }
 
 func TestRoundTrip(t *testing.T) {
-	for i, tc := range testCases {
+	for i, tc := range encodeTestCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			body, err := tc.in.Encode(true)
 			if err != nil {
@@ -247,7 +283,7 @@ func TestRoundTrip(t *testing.T) {
 			}
 
 			bodyString := string(body)
-			fmt.Println(bodyString)
+			// fmt.Println(bodyString)
 
 			var parts []string
 			for _, p := range tc.pattern {

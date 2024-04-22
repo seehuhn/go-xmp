@@ -66,6 +66,7 @@ func getValueNameSpaces(m map[string]struct{}, v Value) {
 	}
 
 	for _, q := range q {
+		m[q.Name.Space] = struct{}{}
 		getValueNameSpaces(m, q.Value)
 	}
 }
@@ -112,6 +113,16 @@ func (q Q) hasQualifiers() bool {
 		}
 	}
 	return false
+}
+
+// hasQualifiers returns true if there are any qualifiers other than xml:lang.
+func (q Q) allSimple() bool {
+	for _, q := range q {
+		if val, ok := q.Value.(textValue); !ok || len(val.Q) > 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // textValue represents a simple non-URI value.

@@ -147,6 +147,7 @@ func newEncoder(aboutURL *url.URL, nsUsed map[string]struct{}, pretty bool) (*en
 	attrs = append(attrs, xml.Attr{Name: e.makeName(RDFNamespace, "about"), Value: about})
 	err = e.EncodeToken(xml.StartElement{
 		Name: e.makeName(RDFNamespace, "Description"),
+		Attr: attrs,
 	})
 	if err != nil {
 		return nil, err
@@ -240,16 +241,26 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 		//   <rdf:value>value</rdf:value>
 		//   <test:q>v</test:q>
 		// </test:prop>
-
-		attr := val.Q.getLang(nil)
+		//
+		// option 5 (with simple qualifiers, compact form):
+		// <test:prop xml:lang="te-ST" test:q="q" rdf:value="value"/>
 
 		if !val.Q.hasQualifiers() { // use option 1
+			attr := val.Q.getLang(nil)
 			tokens = append(tokens,
 				xml.StartElement{Name: name, Attr: attr},
 				xml.CharData(val.Value),
 				xml.EndElement{Name: name},
 			)
+		} else if val.Q.allSimple() { // use option 5
+			attr := make([]xml.Attr, 0, len(val.Q)+1)
+			for _, q := range val.Q {
+				attr = append(attr, xml.Attr{Name: e.makeName(q.Name.Space, q.Name.Local), Value: q.Value.(textValue).Value})
+			}
+			attr = append(attr, xml.Attr{Name: rdfValue, Value: val.Value})
+			tokens = append(tokens, jvxml.EmptyElement{Name: name, Attr: attr})
 		} else { // use option 4
+			attr := val.Q.getLang(nil)
 			attr = append(attr, xml.Attr{
 				Name:  e.makeName(RDFNamespace, "parseType"),
 				Value: "Resource",
@@ -402,7 +413,7 @@ func (e *encoder) appendProperty(tokens []xml.Token, name xml.Name, value Value)
 				tokens = e.appendProperty(tokens, qName, q.Value)
 			}
 			tokens = append(tokens, xml.EndElement{Name: name})
-		} else if val.allSimple() { // use option 1c
+		} else if val.allSimple() && len(val.Value) > 0 { // use option 1c
 			for _, fieldName := range fieldNames {
 				fName := e.makeName(fieldName.Space, fieldName.Local)
 				attr = append(attr, xml.Attr{Name: fName, Value: val.Value[fieldName].(textValue).Value})
