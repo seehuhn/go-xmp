@@ -167,7 +167,7 @@ var decodeTestCases = []decodeTestCase{
 			Properties: map[xml.Name]Value{
 				elemTest: TextValue{
 					Value: "Hallo",
-					Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
+					Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de"}}},
 				},
 			},
 		},
@@ -179,7 +179,7 @@ var decodeTestCases = []decodeTestCase{
 			Properties: map[xml.Name]Value{
 				elemTest: URIValue{
 					Value: &url.URL{Scheme: "http", Host: "example.com"},
-					Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
+					Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de"}}},
 				},
 			},
 		},
@@ -201,7 +201,7 @@ var decodeTestCases = []decodeTestCase{
 						elemTestB: TextValue{Value: "2"},
 						elemTestC: TextValue{
 							Value: "drei",
-							Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
+							Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de"}}},
 						},
 					},
 				},
@@ -221,9 +221,9 @@ var decodeTestCases = []decodeTestCase{
 			Properties: map[xml.Name]Value{
 				elemTest: ArrayValue{
 					Value: []Value{
-						TextValue{Value: "zwei", Q: Q{{Name: attrXMLLang, Value: TextValue{Value: "x-default"}}}},
-						TextValue{Value: "two", Q: Q{{Name: attrXMLLang, Value: TextValue{Value: "en"}}}},
-						TextValue{Value: "zwei", Q: Q{{Name: attrXMLLang, Value: TextValue{Value: "de-de"}}}},
+						TextValue{Value: "zwei", Q: Q{{Name: nameXMLLang, Value: TextValue{Value: "x-default"}}}},
+						TextValue{Value: "two", Q: Q{{Name: nameXMLLang, Value: TextValue{Value: "en"}}}},
+						TextValue{Value: "zwei", Q: Q{{Name: nameXMLLang, Value: TextValue{Value: "de-de"}}}},
 					},
 					Type: Alternative,
 				},
@@ -245,7 +245,7 @@ var decodeTestCases = []decodeTestCase{
 					Q: Q{
 						{Name: elemTestQ, Value: TextValue{
 							Value: "Eigenschaft",
-							Q:     []Qualifier{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
+							Q:     []Qualifier{{Name: nameXMLLang, Value: TextValue{Value: "de"}}},
 						}},
 					},
 				},
@@ -524,7 +524,7 @@ var decodeTestCases = []decodeTestCase{
 						elemTestA: TextValue{Value: "1"},
 					},
 					Q: Q{{
-						Name:  attrRDFType,
+						Name:  nameRDFType,
 						Value: URIValue{Value: &url.URL{Scheme: "http", Host: "ns.seehuhn.de", Path: "/test/", Fragment: "Type"}},
 					}},
 				},
@@ -550,7 +550,7 @@ var decodeTestCases = []decodeTestCase{
 						elemTestA: TextValue{Value: "1"},
 					},
 					Q: Q{{
-						Name:  attrRDFType,
+						Name:  nameRDFType,
 						Value: URIValue{Value: &url.URL{Scheme: "http", Host: "ns.seehuhn.de", Path: "/test/", Fragment: "Type"}},
 					}},
 				},
@@ -600,13 +600,13 @@ func TestIsValidPropertyName(t *testing.T) {
 		{xml.Name{Space: "", Local: "p"}, false},
 		{xml.Name{Space: "http://example.com", Local: ""}, false},
 
-		{attrRDFType, true}, // the only valid name in RDF namespace
+		{nameRDFType, true}, // the only valid name in RDF namespace
 		{xml.Name{Space: rdfNamespace, Local: "resource"}, false},
 		{xml.Name{Space: rdfNamespace, Local: "p"}, false},
-		{elemRDFValue, false},
+		{nameRDFValue, false},
 
 		// all of the xml: namespace is forbidden
-		{attrXMLLang, false},
+		{nameXMLLang, false},
 		{xml.Name{Space: xmlNamespace, Local: "p"}, false},
 	}
 	for i, tc := range tests {
@@ -629,12 +629,12 @@ func TestIsValidQualifierName(t *testing.T) {
 		{xml.Name{Space: "", Local: "q"}, false},
 		{xml.Name{Space: "http://example.com", Local: ""}, false},
 
-		{attrRDFType, true}, // the only valid name in RDF namespace
+		{nameRDFType, true}, // the only valid name in RDF namespace
 		{xml.Name{Space: rdfNamespace, Local: "resource"}, false},
 		{xml.Name{Space: rdfNamespace, Local: "q"}, false},
-		{elemRDFValue, false},
+		{nameRDFValue, false},
 
-		{attrXMLLang, true}, // the only valid name in XML namespace
+		{nameXMLLang, true}, // the only valid name in XML namespace
 		{xml.Name{Space: xmlNamespace, Local: "q"}, false},
 	}
 	for i, tc := range tests {

@@ -144,7 +144,7 @@ var encodeTestCases = []encodeTestCase{
 			Properties: map[xml.Name]Value{
 				elemTest: TextValue{
 					Value: "testvalue",
-					Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de-DE"}}},
+					Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de-DE"}}},
 				},
 			},
 		},
@@ -156,7 +156,7 @@ var encodeTestCases = []encodeTestCase{
 			Properties: map[xml.Name]Value{
 				elemTest: URIValue{
 					Value: testURL,
-					Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de-DE"}}},
+					Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de-DE"}}},
 				},
 			},
 		},
@@ -170,7 +170,7 @@ var encodeTestCases = []encodeTestCase{
 					Value: map[xml.Name]Value{
 						elemTestA: TextValue{
 							Value: "Hallo",
-							Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "de"}}},
+							Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de"}}},
 						},
 					},
 				},
@@ -191,7 +191,7 @@ var encodeTestCases = []encodeTestCase{
 						TextValue{Value: "a"},
 						TextValue{
 							Value: "b",
-							Q:     Q{{Name: attrXMLLang, Value: TextValue{Value: "fr"}}},
+							Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "fr"}}},
 						},
 						TextValue{Value: "c"},
 					},
@@ -238,7 +238,7 @@ var encodeTestCases = []encodeTestCase{
 						{elemTestQ, TextValue{
 							Value: "qualifier",
 							Q: []Qualifier{
-								{attrXMLLang, TextValue{Value: "te-ST"}},
+								{nameXMLLang, TextValue{Value: "te-ST"}},
 							},
 						}},
 					},
@@ -259,7 +259,7 @@ var encodeTestCases = []encodeTestCase{
 				elemTest: URIValue{
 					Value: testURL,
 					Q: []Qualifier{
-						{attrXMLLang, TextValue{Value: "te-ST"}},
+						{nameXMLLang, TextValue{Value: "te-ST"}},
 						{elemTestQ, TextValue{Value: "qualifier"}},
 					},
 				},
