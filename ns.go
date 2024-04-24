@@ -64,14 +64,8 @@ func getPrefix(prefixToNS map[string]string, ns string) string {
 }
 
 var defaultPrefix = map[string]string{
-	xmlNamespace:                                     "xml",
-	rdfNamespace:                                     "rdf",
-	"http://ns.adobe.com/xap/1.0/":                   "xmp",
-	"http://ns.adobe.com/xap/1.0/mm/":                "xmpMM",     // XMP Media Management
-	"http://ns.adobe.com/xap/1.0/rights/":            "xmpRights", // XMP Rights Management
-	"http://ns.adobe.com/xap/1.0/sType/ResourceRef#": "stRef",     // ResourceRef
-	"http://ns.adobe.com/xmp/Identifier/qual/1.0/":   "xmpidq",
-	"http://purl.org/dc/elements/1.1/":               "dc", // Dublin Core
+	xmlNamespace: "xml",
+	rdfNamespace: "rdf",
 }
 
 const (

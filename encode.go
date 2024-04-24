@@ -25,14 +25,14 @@ import (
 	"seehuhn.de/go/xmp/jvxml"
 )
 
-// WriterOptions can be used to control the output format of the [Packet.Write]
+// PacketOptions can be used to control the output format of the [Packet.Write]
 // method.
-type WriterOptions struct {
+type PacketOptions struct {
 	Pretty bool
 }
 
 // Write writes the XMP packet to the given writer.
-func (p *Packet) Write(w io.Writer, opt *WriterOptions) error {
+func (p *Packet) Write(w io.Writer, opt *PacketOptions) error {
 	e, err := p.newEncoder(w, opt)
 	if err != nil {
 		return err
@@ -100,7 +100,7 @@ type encoder struct {
 }
 
 // newEncoder returns a new encoder that writes to w.
-func (p *Packet) newEncoder(w io.Writer, opt *WriterOptions) (*encoder, error) {
+func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 	nsUsed := make(map[string]struct{})
 	nsUsed[xmlNamespace] = struct{}{}
 	nsUsed[rdfNamespace] = struct{}{}
@@ -118,7 +118,22 @@ func (p *Packet) newEncoder(w io.Writer, opt *WriterOptions) (*encoder, error) {
 			prefixToNS[pfx] = ns
 		}
 	}
-	// ... and then the others
+	// ... then the ones registered in the packet, ...
+	for ns := range nsUsed {
+		if _, alreadyDone := nsToPrefix[ns]; alreadyDone {
+			continue
+		}
+		pfx, isRegistered := p.nsToPrefix[ns]
+		if !isRegistered {
+			continue
+		}
+		if _, isClash := nsToPrefix[pfx]; isClash {
+			continue
+		}
+		nsToPrefix[ns] = pfx
+		prefixToNS[pfx] = ns
+	}
+	// ... and then the rest:
 	for ns := range nsUsed {
 		if _, alreadyDone := nsToPrefix[ns]; alreadyDone {
 			continue
@@ -153,9 +168,9 @@ func (p *Packet) newEncoder(w io.Writer, opt *WriterOptions) (*encoder, error) {
 	}
 
 	var attrs []xml.Attr
-	nameSpaces := maps.Keys(e.nsToPrefix)
-	sort.Strings(nameSpaces)
-	for _, ns := range nameSpaces {
+	namespaces := maps.Keys(e.nsToPrefix)
+	sort.Strings(namespaces)
+	for _, ns := range namespaces {
 		if ns == xmlNamespace {
 			continue
 		}

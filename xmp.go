@@ -30,76 +30,116 @@ import (
 // Packet represents an XMP packet.
 type Packet struct {
 	// Properties maps namespaces to models.
-	Properties map[xml.Name]Value
+	Properties map[xml.Name]Raw
 
 	// About (optional) is the URL of the resource described by the XMP packet.
 	About *url.URL
+
+	nsToPrefix map[string]string
 }
 
 // NewPacket allocates a new XMP packet.
 func NewPacket() *Packet {
 	return &Packet{
-		Properties: make(map[xml.Name]Value),
+		Properties: make(map[xml.Name]Raw),
+		nsToPrefix: make(map[string]string),
 	}
 }
 
-// Set stores the given value in the packet.
-func (p *Packet) Set(nameSpace, propertyName string, value Type) {
-	name := xml.Name{Space: nameSpace, Local: propertyName}
+// RegisterPrefix registers a namespace prefix.
+func (p *Packet) RegisterPrefix(ns, prefix string) {
+	p.nsToPrefix[ns] = prefix
+}
+
+// SetValue stores the given value in the packet.
+func (p *Packet) SetValue(namespace, propertyName string, value Value) {
+	name := xml.Name{Space: namespace, Local: propertyName}
 	if !isValidPropertyName(name) {
 		panic("invalid property name")
 	}
 	p.Properties[name] = value.GetXMP()
 }
 
-// Get retrieves the value of the given property from the packet.
+// GetValue retrieves the value of the given property from the packet.
 //
 // In case the value is not found, [ErrNotFound] is returned.
 // If the value exists but has the wrong format, [ErrInvalid] is returned.
-func Get[E Type](val *E, p *Packet, nameSpace, propertyName string) error {
-	name := xml.Name{Space: nameSpace, Local: propertyName}
-	v, ok := p.Properties[name]
+func GetValue[E Value](p *Packet, namespace, propertyName string) (E, error) {
+	var zero E
+	name := xml.Name{Space: namespace, Local: propertyName}
+	xmpData, ok := p.Properties[name]
 	if !ok {
-		return ErrNotFound
+		return zero, ErrNotFound
 	}
-	u, err := (*val).DecodeAnother(v)
+	u, err := zero.DecodeAnother(xmpData)
 	if err != nil {
-		return err
+		return zero, err
 	}
-	*val = u.(E)
-	return nil
+	return u.(E), nil
 }
 
-// Value is one of [TextValue], [URIValue], [StructValue], or [ArrayValue].
-type Value interface {
+// Raw is one of [RawText], [RawURI], [RawStruct], or [RawArray].
+type Raw interface {
 	getNamespaces(m map[string]struct{})
 	appendXML(tokens []xml.Token, name xml.Name) []xml.Token
 }
 
-// A Qualifier can be used to attach additional information to a [Value].
+// A Qualifier can be used to attach additional information to the value
+// of an XMP property.
 type Qualifier struct {
 	Name  xml.Name
-	Value Value
+	Value Raw
 }
 
 // Language returns a qualifier which specifies the language of a value.
 func Language(l language.Tag) Qualifier {
 	return Qualifier{
 		Name:  nameXMLLang,
-		Value: TextValue{Value: l.String()},
+		Value: RawText{Value: l.String()},
 	}
 }
 
-// Q stores the qualifiers of a [Value].
+// Q represents a list of qualifiers.
 type Q []Qualifier
 
-// getLang appends the xml:lang attribute if needed.
-func (q Q) getLang(attr []xml.Attr) []xml.Attr {
+// StripLanguage returns the language qualifier of a [Q] and
+// a new [Q] with the language qualifier removed.
+// If no language qualifier is present, [language.Und] is returned.
+func (q Q) StripLanguage() (language.Tag, Q) {
+	var lang language.Tag
+	var stripped Q
 	for _, q := range q {
 		if q.Name == nameXMLLang {
-			if v, ok := q.Value.(TextValue); ok {
-				// We don't need to use .makeName() here, since the prefix
-				// is always "xml".
+			if v, ok := q.Value.(RawText); ok {
+				if l, err := language.Parse(v.Value); err == nil && lang == language.Und {
+					lang = l
+				}
+			}
+		} else {
+			stripped = append(stripped, q)
+		}
+	}
+	return lang, stripped
+}
+
+// WithLanguage returns a new [Q] with the given language qualifier.
+// Any pre-existing language qualifier is removed.
+func (q Q) WithLanguage(l language.Tag) Q {
+	res := make(Q, 0, len(q)+1)
+	res = append(res, Language(l))
+	for _, q := range q {
+		if q.Name != nameXMLLang {
+			res = append(res, q)
+		}
+	}
+	return res
+}
+
+// getLangAttr appends the xml:lang attribute if needed.
+func (q Q) getLangAttr(attr []xml.Attr) []xml.Attr {
+	for _, q := range q {
+		if q.Name == nameXMLLang {
+			if v, ok := q.Value.(RawText); ok {
 				attr = append(attr, xml.Attr{Name: nameXMLLang, Value: v.Value})
 			}
 		}
@@ -120,29 +160,29 @@ func (q Q) hasQualifiers() bool {
 // hasQualifiers returns true if there are any qualifiers other than xml:lang.
 func (q Q) allSimple() bool {
 	for _, q := range q {
-		if val, ok := q.Value.(TextValue); !ok || len(val.Q) > 0 {
+		if val, ok := q.Value.(RawText); !ok || len(val.Q) > 0 {
 			return false
 		}
 	}
 	return true
 }
 
-// TextValue is a simple text (i.e. non-URI) value.
-type TextValue struct {
+// RawText is a simple text (i.e. non-URI) value.
+type RawText struct {
 	Value string
 	Q
 }
 
-// getNamespaces implements the [Value] interface.
-func (t TextValue) getNamespaces(m map[string]struct{}) {
+// getNamespaces implements the [Raw] interface.
+func (t RawText) getNamespaces(m map[string]struct{}) {
 	for _, q := range t.Q {
 		m[q.Name.Space] = struct{}{}
 		q.Value.getNamespaces(m)
 	}
 }
 
-// appendXML implements the [Value] interface.
-func (t TextValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
+// appendXML implements the [Raw] interface.
+func (t RawText) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	// Possible ways to encode the value:
 	//
 	// option 1 (no non-lang qualifiers):
@@ -178,7 +218,7 @@ func (t TextValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	// <test:prop xml:lang="te-ST" test:q="q" rdf:value="value"/>
 
 	if !t.Q.hasQualifiers() { // use option 1
-		attr := t.Q.getLang(nil)
+		attr := t.Q.getLangAttr(nil)
 		tokens = append(tokens,
 			xml.StartElement{Name: name, Attr: attr},
 			xml.CharData(t.Value),
@@ -188,12 +228,12 @@ func (t TextValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 		attr := make([]xml.Attr, 0, len(t.Q)+1)
 		for _, q := range t.Q {
 			attr = append(attr,
-				xml.Attr{Name: q.Name, Value: q.Value.(TextValue).Value})
+				xml.Attr{Name: q.Name, Value: q.Value.(RawText).Value})
 		}
 		attr = append(attr, xml.Attr{Name: nameRDFValue, Value: t.Value})
 		tokens = append(tokens, jvxml.EmptyElement{Name: name, Attr: attr})
 	} else { // use option 4
-		attr := t.Q.getLang(nil)
+		attr := t.Q.getLangAttr(nil)
 		attr = append(attr, attrParseTypeResource)
 		tokens = append(tokens,
 			xml.StartElement{Name: name, Attr: attr},
@@ -212,35 +252,22 @@ func (t TextValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	return tokens
 }
 
-// GetXMP implements the [Type] interface.
-func (t TextValue) GetXMP() Value {
-	return t
-}
-
-// DecodeAnother implements the [Type] interface.
-func (TextValue) DecodeAnother(v Value) (Type, error) {
-	if v, ok := v.(TextValue); ok {
-		return v, nil
-	}
-	return nil, ErrInvalid
-}
-
-// URIValue is a simple URI value.
-type URIValue struct {
+// RawURI is a simple URI value.
+type RawURI struct {
 	Value *url.URL
 	Q
 }
 
-// getNamespaces implements the [Value] interface.
-func (u URIValue) getNamespaces(m map[string]struct{}) {
+// getNamespaces implements the [Raw] interface.
+func (u RawURI) getNamespaces(m map[string]struct{}) {
 	for _, q := range u.Q {
 		m[q.Name.Space] = struct{}{}
 		q.Value.getNamespaces(m)
 	}
 }
 
-// appendXML implements the [Value] interface.
-func (u URIValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
+// appendXML implements the [Raw] interface.
+func (u RawURI) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	// Possible ways to encode the value:
 	//
 	// option 1 (no non-lang qualifiers):
@@ -267,7 +294,7 @@ func (u URIValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	//   <test:q rdf:resource="http://example.com"/>
 	// </test:prop>
 
-	attr := u.Q.getLang(nil)
+	attr := u.Q.getLangAttr(nil)
 
 	if u.Q.hasQualifiers() { // use option 4
 		attr = append(attr, attrParseTypeResource)
@@ -297,40 +324,14 @@ func (u URIValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	return tokens
 }
 
-// GetXMP implements the [Type] interface.
-func (u URIValue) GetXMP() Value {
-	return u
-}
-
-// DecodeAnother implements the [Type] interface.
-func (URIValue) DecodeAnother(v Value) (Type, error) {
-	if v, ok := v.(URIValue); ok {
-		return v, nil
-	}
-	return nil, ErrInvalid
-}
-
-// StructValue is an XMP structure.
-type StructValue struct {
-	Value map[xml.Name]Value
+// RawStruct is an XMP structure.
+type RawStruct struct {
+	Value map[xml.Name]Raw
 	Q
 }
 
-// GetXMP implements the [Type] interface.
-func (s StructValue) GetXMP() Value {
-	return s
-}
-
-// DecodeAnother implements the [Type] interface.
-func (StructValue) DecodeAnother(v Value) (Type, error) {
-	if v, ok := v.(StructValue); ok {
-		return v, nil
-	}
-	return nil, ErrInvalid
-}
-
-// getNamespaces implements the [Value] interface.
-func (s StructValue) getNamespaces(m map[string]struct{}) {
+// getNamespaces implements the [Raw] interface.
+func (s RawStruct) getNamespaces(m map[string]struct{}) {
 	for key, val := range s.Value {
 		m[key.Space] = struct{}{}
 		val.getNamespaces(m)
@@ -341,8 +342,8 @@ func (s StructValue) getNamespaces(m map[string]struct{}) {
 	}
 }
 
-// appendXML implements the [Value] interface.
-func (s StructValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
+// appendXML implements the [Raw] interface.
+func (s RawStruct) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	// Possible ways to encode the value:
 	//
 	// option 1a (no non-lang qualifiers):
@@ -396,7 +397,7 @@ func (s StructValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	//   <test:q>v</test:q>
 	// </test:prop>
 
-	attr := s.Q.getLang(nil)
+	attr := s.Q.getLangAttr(nil)
 
 	fieldNames := s.fieldNames()
 	if s.Q.hasQualifiers() { // use option 4
@@ -420,7 +421,7 @@ func (s StructValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 		for _, fieldName := range fieldNames {
 			attr = append(attr, xml.Attr{
 				Name:  fieldName,
-				Value: s.Value[fieldName].(TextValue).Value,
+				Value: s.Value[fieldName].(RawText).Value,
 			})
 		}
 		tokens = append(tokens, jvxml.EmptyElement{Name: name, Attr: attr})
@@ -436,7 +437,7 @@ func (s StructValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 }
 
 // fieldNames returns the field names sorted by namespace and local name.
-func (s *StructValue) fieldNames() []xml.Name {
+func (s *RawStruct) fieldNames() []xml.Name {
 	fieldNames := maps.Keys(s.Value)
 	sort.Slice(fieldNames, func(i, j int) bool {
 		if fieldNames[i].Space != fieldNames[j].Space {
@@ -449,39 +450,26 @@ func (s *StructValue) fieldNames() []xml.Name {
 
 // allSimple returns true if all values are simple non-URI values, with no
 // qualifiers.
-func (s *StructValue) allSimple() bool {
+func (s *RawStruct) allSimple() bool {
 	for _, v := range s.Value {
-		if v, ok := v.(TextValue); !ok || len(v.Q) > 0 {
+		if v, ok := v.(RawText); !ok || len(v.Q) > 0 {
 			return false
 		}
 	}
 	return true
 }
 
-// ArrayValue is an XMP array.
+// RawArray is an XMP array.
 // This can be an unordered array, an ordered array, or an alternative array,
 // depending on the value of the Type field.
-type ArrayValue struct {
-	Value []Value
-	Type  ArrayType
+type RawArray struct {
+	Value []Raw
+	Type  RawArrayType
 	Q
 }
 
-// GetXMP implements the [Type] interface.
-func (a ArrayValue) GetXMP() Value {
-	return a
-}
-
-// DecodeAnother implements the [Type] interface.
-func (ArrayValue) DecodeAnother(v Value) (Type, error) {
-	if v, ok := v.(ArrayValue); ok {
-		return v, nil
-	}
-	return nil, ErrInvalid
-}
-
-// getNamespaces implements the [Value] interface.
-func (a ArrayValue) getNamespaces(m map[string]struct{}) {
+// getNamespaces implements the [Raw] interface.
+func (a RawArray) getNamespaces(m map[string]struct{}) {
 	for _, v := range a.Value {
 		v.getNamespaces(m)
 	}
@@ -491,8 +479,8 @@ func (a ArrayValue) getNamespaces(m map[string]struct{}) {
 	}
 }
 
-// appendXML implements the [Value] interface.
-func (a ArrayValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
+// appendXML implements the [Raw] interface.
+func (a RawArray) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	// Possible ways to encode the value:
 	//
 	// option 1 (no non-lang qualifiers):
@@ -539,7 +527,7 @@ func (a ArrayValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	//   <test:q>v</test:q>
 	// </test:prop>
 
-	attr := a.Q.getLang(nil)
+	attr := a.Q.getLangAttr(nil)
 
 	var envName xml.Name
 	switch a.Type {
@@ -586,30 +574,31 @@ func (a ArrayValue) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	return tokens
 }
 
-// ArrayType represents the type of an XMP array (unordered, ordered, or
+// RawArrayType represents the type of an XMP array (unordered, ordered, or
 // alternative).
-type ArrayType int
+type RawArrayType int
 
 // These are the possible array types in XMP.
 const (
-	Unordered ArrayType = iota + 1
+	Unordered RawArrayType = iota + 1
 	Ordered
 	Alternative
 )
 
-// A Type is a data type which can be represented as XMP data.
-type Type interface {
-	// GetXMP returns the XMP representation of a value.
-	GetXMP() Value
+// A Value is a datatype which can be represented as XMP data.
+type Value interface {
+	IsZero() bool
 
-	DecodeAnother(Value) (Type, error)
+	// GetXMP returns the XMP representation of a value.
+	GetXMP() Raw
+
+	DecodeAnother(Raw) (Value, error)
 }
 
-var (
-	// ErrInvalid is returned when XMP data is present but does not have
-	// the expected structure.
-	ErrInvalid = errors.New("invalid XMP data")
+// ErrInvalid is returned by [GetValue] when XMP data is present in the XML
+// file, but the data does not have the expected structure.
+var ErrInvalid = errors.New("invalid XMP data")
 
-	// ErrNotFound is returned when a property is not present in the packet.
-	ErrNotFound = errors.New("property not found")
-)
+// ErrNotFound is returned by [GetValue] when a requested property is not
+// present in the packet.
+var ErrNotFound = errors.New("property not found")

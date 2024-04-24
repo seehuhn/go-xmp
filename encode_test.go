@@ -47,14 +47,14 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "without about URL",
 		in: &Packet{
-			Properties: map[xml.Name]Value{},
+			Properties: map[xml.Name]Raw{},
 		},
 		pattern: []string{"<rdf:Description rdf:about=\"\">"},
 	},
 	{
 		desc: "with about URL",
 		in: &Packet{
-			Properties: map[xml.Name]Value{},
+			Properties: map[xml.Name]Raw{},
 			About:      testURL,
 		},
 		pattern: []string{"<rdf:Description rdf:about=\"http://example.com\">"},
@@ -62,8 +62,8 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "simple non-URI value",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: TextValue{Value: "testvalue"},
+			Properties: map[xml.Name]Raw{
+				elemTest: RawText{Value: "testvalue"},
 			},
 		},
 		pattern: []string{"<test:prop>testvalue</test:prop>"},
@@ -71,8 +71,8 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "simple URI value",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: URIValue{Value: testURL},
+			Properties: map[xml.Name]Raw{
+				elemTest: RawURI{Value: testURL},
 			},
 		},
 		pattern: []string{"<test:prop rdf:resource=\"http://example.com\"/>"},
@@ -80,8 +80,8 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "XML markup in text value",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: TextValue{Value: "<b>test</b>"},
+			Properties: map[xml.Name]Raw{
+				elemTest: RawText{Value: "<b>test</b>"},
 			},
 		},
 		pattern: []string{"<test:prop>&lt;b&gt;test&lt;/b&gt;</test:prop>"},
@@ -89,12 +89,12 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "structure value",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: StructValue{
-					Value: map[xml.Name]Value{
-						elemTestA: TextValue{Value: "1", Q: Q{{elemTestQ, TextValue{Value: "q"}}}},
-						elemTestB: TextValue{Value: "2", Q: Q{{elemTestQ, TextValue{Value: "q"}}}},
-						elemTestC: TextValue{Value: "3", Q: Q{{elemTestQ, TextValue{Value: "q"}}}},
+			Properties: map[xml.Name]Raw{
+				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: RawStruct{
+					Value: map[xml.Name]Raw{
+						elemTestA: RawText{Value: "1", Q: Q{{elemTestQ, RawText{Value: "q"}}}},
+						elemTestB: RawText{Value: "2", Q: Q{{elemTestQ, RawText{Value: "q"}}}},
+						elemTestC: RawText{Value: "3", Q: Q{{elemTestQ, RawText{Value: "q"}}}},
 					},
 				},
 			},
@@ -110,12 +110,12 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "compact struct",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: StructValue{
-					Value: map[xml.Name]Value{
-						elemTestA: TextValue{Value: "1"},
-						elemTestB: TextValue{Value: "2"},
-						elemTestC: TextValue{Value: "3"},
+			Properties: map[xml.Name]Raw{
+				elemTest: RawStruct{
+					Value: map[xml.Name]Raw{
+						elemTestA: RawText{Value: "1"},
+						elemTestB: RawText{Value: "2"},
+						elemTestC: RawText{Value: "3"},
 					},
 				},
 			},
@@ -127,9 +127,9 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "empty structure ",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: StructValue{
-					Value: map[xml.Name]Value{},
+			Properties: map[xml.Name]Raw{
+				{Space: "http://ns.seehuhn.de/test/#", Local: "s"}: RawStruct{
+					Value: map[xml.Name]Raw{},
 				},
 			},
 		},
@@ -141,10 +141,10 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "xml:lang on property",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: TextValue{
+			Properties: map[xml.Name]Raw{
+				elemTest: RawText{
 					Value: "testvalue",
-					Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de-DE"}}},
+					Q:     Q{{Name: nameXMLLang, Value: RawText{Value: "de-DE"}}},
 				},
 			},
 		},
@@ -153,10 +153,10 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "xml:lang on URI value",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: URIValue{
+			Properties: map[xml.Name]Raw{
+				elemTest: RawURI{
 					Value: testURL,
-					Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de-DE"}}},
+					Q:     Q{{Name: nameXMLLang, Value: RawText{Value: "de-DE"}}},
 				},
 			},
 		},
@@ -165,12 +165,12 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "xml:lang on structure field",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: StructValue{
-					Value: map[xml.Name]Value{
-						elemTestA: TextValue{
+			Properties: map[xml.Name]Raw{
+				elemTest: RawStruct{
+					Value: map[xml.Name]Raw{
+						elemTestA: RawText{
 							Value: "Hallo",
-							Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "de"}}},
+							Q:     Q{{Name: nameXMLLang, Value: RawText{Value: "de"}}},
 						},
 					},
 				},
@@ -185,15 +185,15 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "xml:lang on array item",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: ArrayValue{
-					Value: []Value{
-						TextValue{Value: "a"},
-						TextValue{
+			Properties: map[xml.Name]Raw{
+				elemTest: RawArray{
+					Value: []Raw{
+						RawText{Value: "a"},
+						RawText{
 							Value: "b",
-							Q:     Q{{Name: nameXMLLang, Value: TextValue{Value: "fr"}}},
+							Q:     Q{{Name: nameXMLLang, Value: RawText{Value: "fr"}}},
 						},
-						TextValue{Value: "c"},
+						RawText{Value: "c"},
 					},
 					Type: Ordered,
 				},
@@ -212,11 +212,11 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "general qualfiers",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: TextValue{
+			Properties: map[xml.Name]Raw{
+				elemTest: RawText{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, URIValue{Value: &url.URL{Scheme: "http", Host: "example.com"}}},
+						{elemTestQ, RawURI{Value: &url.URL{Scheme: "http", Host: "example.com"}}},
 					},
 				},
 			},
@@ -231,14 +231,14 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "xml:lang on qualifier value",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: TextValue{
+			Properties: map[xml.Name]Raw{
+				elemTest: RawText{
 					Value: "test value",
 					Q: []Qualifier{
-						{elemTestQ, TextValue{
+						{elemTestQ, RawText{
 							Value: "qualifier",
 							Q: []Qualifier{
-								{nameXMLLang, TextValue{Value: "te-ST"}},
+								{nameXMLLang, RawText{Value: "te-ST"}},
 							},
 						}},
 					},
@@ -255,12 +255,12 @@ var encodeTestCases = []encodeTestCase{
 	{
 		desc: "general qualfiers on URI value",
 		in: &Packet{
-			Properties: map[xml.Name]Value{
-				elemTest: URIValue{
+			Properties: map[xml.Name]Raw{
+				elemTest: RawURI{
 					Value: testURL,
 					Q: []Qualifier{
-						{nameXMLLang, TextValue{Value: "te-ST"}},
-						{elemTestQ, TextValue{Value: "qualifier"}},
+						{nameXMLLang, RawText{Value: "te-ST"}},
+						{elemTestQ, RawText{Value: "qualifier"}},
 					},
 				},
 			},
@@ -276,7 +276,7 @@ var encodeTestCases = []encodeTestCase{
 
 func TestRoundTrip(t *testing.T) {
 	for i, tc := range encodeTestCases {
-		opt := &WriterOptions{
+		opt := &PacketOptions{
 			Pretty: true,
 		}
 		t.Run(tc.desc, func(t *testing.T) {
@@ -304,7 +304,7 @@ func TestRoundTrip(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if d := cmp.Diff(tc.in, out); d != "" {
+			if d := cmp.Diff(tc.in, out, cmp.AllowUnexported(Packet{})); d != "" {
 				t.Fatalf("RoundTrip mismatch (-want +got):\n%s", d)
 			}
 		})
