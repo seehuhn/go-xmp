@@ -18,6 +18,7 @@ package xmp
 
 import (
 	"mime"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -131,6 +132,43 @@ func (AgentName) DecodeAnother(val Raw) (Value, error) {
 		return nil, ErrInvalid
 	}
 	return AgentName{v.Value, v.Q}, nil
+}
+
+// URL represents an XMP URL value.
+type URL struct {
+	V *url.URL
+	Q
+}
+
+// NewURL creates a new XMP URL value.
+func NewURL(u *url.URL, qualifiers ...Qualifier) URL {
+	return URL{V: u, Q: Q(qualifiers)}
+}
+
+func (u URL) String() string {
+	return u.V.String()
+}
+
+// IsZero implements the [Value] interface.
+func (u URL) IsZero() bool {
+	return u.V == nil && len(u.Q) == 0
+}
+
+// GetXMP implements the [Value] interface.
+func (u URL) GetXMP() Raw {
+	return RawURI{
+		Value: u.V,
+		Q:     u.Q,
+	}
+}
+
+// DecodeAnother implements the [Value] interface.
+func (URL) DecodeAnother(val Raw) (Value, error) {
+	v, ok := val.(RawURI)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	return URL{v.Value, v.Q}, nil
 }
 
 // Real represents a floating-point number.
@@ -358,9 +396,18 @@ func (u UnorderedArray[E]) GetXMP() Raw {
 // DecodeAnother implements the [Value] interface.
 func (UnorderedArray[E]) DecodeAnother(val Raw) (Value, error) {
 	a, ok := val.(RawArray)
-	if !ok || a.Kind != Unordered {
+	if !ok {
+		// Try to fix invalid input files: if the data can be decoded as a
+		// single E, return a single-element array.
+		var tmp E
+		if v, err := tmp.DecodeAnother(val); err == nil {
+			return UnorderedArray[E]{V: []E{v.(E)}}, nil
+		}
+
 		return nil, ErrInvalid
 	}
+	// We ignore the array kind here.
+
 	res := UnorderedArray[E]{Q: a.Q}
 	res.V = make([]E, len(a.Value))
 	for i, val := range a.Value {
@@ -405,10 +452,71 @@ func (o OrderedArray[E]) GetXMP() Raw {
 // DecodeAnother implements the [Value] interface.
 func (OrderedArray[E]) DecodeAnother(val Raw) (Value, error) {
 	a, ok := val.(RawArray)
-	if !ok || a.Kind != Ordered {
+	if !ok {
+		// Try to fix invalid input files: if the data can be decoded as a
+		// single E, return a single-element array.
+		var tmp E
+		if v, err := tmp.DecodeAnother(val); err == nil {
+			return OrderedArray[E]{V: []E{v.(E)}}, nil
+		}
+
 		return nil, ErrInvalid
 	}
+	// We ignore the array kind here.
+
 	res := OrderedArray[E]{Q: a.Q}
+	res.V = make([]E, len(a.Value))
+	for i, val := range a.Value {
+		w, err := res.V[i].DecodeAnother(val)
+		if err != nil {
+			return nil, err
+		}
+		res.V[i] = w.(E)
+	}
+	res.Q = a.Q
+	return res, nil
+}
+
+// AlternativeArray represents an ordered array of values.
+type AlternativeArray[E Value] struct {
+	V []E
+	Q
+}
+
+// IsZero implements the [Value] interface.
+func (a AlternativeArray[E]) IsZero() bool {
+	return len(a.V) == 0 && len(a.Q) == 0
+}
+
+// GetXMP implements the [Value] interface.
+func (a AlternativeArray[E]) GetXMP() Raw {
+	var vals []Raw
+	for _, v := range a.V {
+		vals = append(vals, v.GetXMP())
+	}
+	return RawArray{
+		Value: vals,
+		Kind:  Alternative,
+		Q:     a.Q,
+	}
+}
+
+// DecodeAnother implements the [Value] interface.
+func (AlternativeArray[E]) DecodeAnother(val Raw) (Value, error) {
+	a, ok := val.(RawArray)
+	if !ok {
+		// Try to fix invalid input files: if the data can be decoded as a
+		// single E, return a single-element array.
+		var tmp E
+		if v, err := tmp.DecodeAnother(val); err == nil {
+			return AlternativeArray[E]{V: []E{v.(E)}}, nil
+		}
+
+		return nil, ErrInvalid
+	}
+	// We ignore the array kind here.
+
+	res := AlternativeArray[E]{Q: a.Q}
 	res.V = make([]E, len(a.Value))
 	for i, val := range a.Value {
 		w, err := res.V[i].DecodeAnother(val)
@@ -477,9 +585,17 @@ func (l Localized) GetXMP() Raw {
 // DecodeAnother implements the [Value] interface.
 func (Localized) DecodeAnother(val Raw) (Value, error) {
 	a, ok := val.(RawArray)
-	if !ok || a.Kind != Alternative {
+	if !ok {
+		// Try to fix invalid input files: if the data can be decoded as a
+		// single E, return a single-element array.
+		var tmp Text
+		if v, err := tmp.DecodeAnother(val); err == nil {
+			return Localized{Default: v.(Text)}, nil
+		}
+
 		return nil, ErrInvalid
 	}
+	// We ignore the array kind here.
 
 	res := Localized{
 		V: map[language.Tag]Text{},

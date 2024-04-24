@@ -108,18 +108,20 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 		nsUsed[key.Space] = struct{}{}
 		value.getNamespaces(nsUsed)
 	}
+	nsList := maps.Keys(nsUsed)
+	sort.Strings(nsList)
 
 	nsToPrefix := make(map[string]string)
 	prefixToNS := make(map[string]string)
 	// register default namespaces first, ...
-	for ns := range nsUsed {
+	for _, ns := range nsList {
 		if pfx, isDefault := defaultPrefix[ns]; isDefault {
 			nsToPrefix[ns] = pfx
 			prefixToNS[pfx] = ns
 		}
 	}
 	// ... then the ones registered in the packet, ...
-	for ns := range nsUsed {
+	for _, ns := range nsList {
 		if _, alreadyDone := nsToPrefix[ns]; alreadyDone {
 			continue
 		}
@@ -134,7 +136,7 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 		prefixToNS[pfx] = ns
 	}
 	// ... and then the rest:
-	for ns := range nsUsed {
+	for _, ns := range nsList {
 		if _, alreadyDone := nsToPrefix[ns]; alreadyDone {
 			continue
 		}

@@ -51,7 +51,7 @@ func getPrefix(prefixToNS map[string]string, ns string) string {
 		// Name is taken.  Find a better one.
 		idx := len(prefixToNS) + 1
 		for {
-			if id := prefix + "_" + strconv.Itoa(idx); prefixToNS[id] == "" {
+			if id := prefix + strconv.Itoa(idx); prefixToNS[id] == "" {
 				prefix = id
 				break
 			}

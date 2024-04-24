@@ -83,7 +83,8 @@ type DublinCore struct {
 
 // XMP represents the XMP basic namespace.
 //
-// See section 8.4 of ISO 16684-1:2011.
+// See section 8.4 of ISO 16684-1:2011 and also
+// https://developer.adobe.com/xmp/docs/XMPNamespaces/xmp/ .
 type XMP struct {
 	_ Namespace `xmp:"http://ns.adobe.com/xap/1.0/"`
 	_ Prefix    `xmp:"xmp"`
@@ -116,6 +117,17 @@ type XMP struct {
 	// The value must be -1 (rejected), 0 (unrated) or a rating in the range
 	// (0, 5].
 	Rating Real
+
+	// BaseUrl is the base URL for relative URLs in the document content. If
+	// this document contains Internet links, and those links are relative,
+	// they are relative to this base URL.
+	BaseURL URL
+
+	// Nickname is a short informal name for the resource.
+	Nickname Text
+
+	// Thumbnails is a list of thumbnail images for the resource.
+	// Thumbnails AlternativeArray[Thumbnail]
 }
 
 // Set sets all the (non-zero) fields from a namespace struct.
@@ -213,6 +225,7 @@ func (p *Packet) Get(dst any) {
 		val := fVal.Interface().(Value)
 		u, err := val.DecodeAnother(xmpData)
 		if err != nil {
+			fmt.Println(">>>", propertyName, err, xmpData)
 			continue
 		}
 		fVal.Set(reflect.ValueOf(u))
