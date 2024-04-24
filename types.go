@@ -37,6 +37,10 @@ func NewText(s string, qualifiers ...Qualifier) Text {
 	return Text{V: s, Q: Q(qualifiers)}
 }
 
+func (t Text) String() string {
+	return t.V
+}
+
 // IsZero implements the [Value] interface.
 func (t Text) IsZero() bool {
 	return t.V == "" && len(t.Q) == 0
@@ -65,16 +69,20 @@ type ProperName struct {
 	Q
 }
 
+func (p ProperName) String() string {
+	return p.V
+}
+
 // IsZero implements the [Value] interface.
-func (t ProperName) IsZero() bool {
-	return t.V == "" && len(t.Q) == 0
+func (p ProperName) IsZero() bool {
+	return p.V == "" && len(p.Q) == 0
 }
 
 // GetXMP implements the [Value] interface.
-func (t ProperName) GetXMP() Raw {
+func (p ProperName) GetXMP() Raw {
 	return RawText{
-		Value: t.V,
-		Q:     t.Q,
+		Value: p.V,
+		Q:     p.Q,
 	}
 }
 
@@ -232,9 +240,19 @@ var dateFormats = []string{
 	"2006",
 }
 
+// Locale represents an XMP language code.
 type Locale struct {
 	V language.Tag
 	Q
+}
+
+// NewLocale creates a new XMP locale value.
+func NewLocale(tag language.Tag, qualifiers ...Qualifier) Locale {
+	return Locale{V: tag, Q: Q(qualifiers)}
+}
+
+func (l Locale) String() string {
+	return l.V.String()
 }
 
 // IsZero implements the [Value] interface.
@@ -273,6 +291,10 @@ type MimeType struct {
 	V     string
 	Param map[string]string
 	Q
+}
+
+func (m MimeType) String() string {
+	return mime.FormatMediaType(m.V, m.Param)
 }
 
 // IsZero implements the [Value] interface.
@@ -328,7 +350,7 @@ func (u UnorderedArray[E]) GetXMP() Raw {
 	}
 	return RawArray{
 		Value: vals,
-		Type:  Unordered,
+		Kind:  Unordered,
 		Q:     u.Q,
 	}
 }
@@ -336,7 +358,7 @@ func (u UnorderedArray[E]) GetXMP() Raw {
 // DecodeAnother implements the [Value] interface.
 func (UnorderedArray[E]) DecodeAnother(val Raw) (Value, error) {
 	a, ok := val.(RawArray)
-	if !ok || a.Type != Unordered {
+	if !ok || a.Kind != Unordered {
 		return nil, ErrInvalid
 	}
 	res := UnorderedArray[E]{Q: a.Q}
@@ -375,7 +397,7 @@ func (o OrderedArray[E]) GetXMP() Raw {
 	}
 	return RawArray{
 		Value: vals,
-		Type:  Ordered,
+		Kind:  Ordered,
 		Q:     o.Q,
 	}
 }
@@ -383,7 +405,7 @@ func (o OrderedArray[E]) GetXMP() Raw {
 // DecodeAnother implements the [Value] interface.
 func (OrderedArray[E]) DecodeAnother(val Raw) (Value, error) {
 	a, ok := val.(RawArray)
-	if !ok || a.Type != Ordered {
+	if !ok || a.Kind != Ordered {
 		return nil, ErrInvalid
 	}
 	res := OrderedArray[E]{Q: a.Q}
@@ -447,7 +469,7 @@ func (l Localized) GetXMP() Raw {
 
 	return RawArray{
 		Value: vals,
-		Type:  Alternative,
+		Kind:  Alternative,
 		Q:     l.Q,
 	}
 }
@@ -455,7 +477,7 @@ func (l Localized) GetXMP() Raw {
 // DecodeAnother implements the [Value] interface.
 func (Localized) DecodeAnother(val Raw) (Value, error) {
 	a, ok := val.(RawArray)
-	if !ok || a.Type != Alternative {
+	if !ok || a.Kind != Alternative {
 		return nil, ErrInvalid
 	}
 

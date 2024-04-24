@@ -254,7 +254,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			items := getChildElements(inner)
 			res := RawArray{
 				Value: make([]Raw, 0, len(items)),
-				Type:  tp,
+				Kind:  tp,
 				Q:     qq,
 			}
 			for _, i := range items {

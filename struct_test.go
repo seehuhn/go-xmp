@@ -40,7 +40,7 @@ func TestTag(t *testing.T) {
 	}
 
 	dc2 := DublinCore{}
-	p.Fill(&dc2)
+	p.Get(&dc2)
 
 	if d := cmp.Diff(dc1, &dc2); d != "" {
 		t.Errorf("dc1 and dc2 differ (-want +got):\n%s", d)

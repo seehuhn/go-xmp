@@ -195,7 +195,7 @@ var encodeTestCases = []encodeTestCase{
 						},
 						RawText{Value: "c"},
 					},
-					Type: Ordered,
+					Kind: Ordered,
 				},
 			},
 		},

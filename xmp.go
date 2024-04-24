@@ -464,7 +464,7 @@ func (s *RawStruct) allSimple() bool {
 // depending on the value of the Type field.
 type RawArray struct {
 	Value []Raw
-	Type  RawArrayType
+	Kind  RawArrayType
 	Q
 }
 
@@ -530,7 +530,7 @@ func (a RawArray) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	attr := a.Q.getLangAttr(nil)
 
 	var envName xml.Name
-	switch a.Type {
+	switch a.Kind {
 	case Unordered:
 		envName = nameRDFBag
 	case Ordered:

@@ -100,7 +100,8 @@ type XMP struct {
 	// the identification system for that item.
 	Identifier UnorderedArray[Text]
 
-	// Label is a short informal name for the resource.
+	// Label is a word or short phrase that identifies a resource within a
+	// local context.
 	Label Text
 
 	// MetadataDate is the date and time that any metadata for this resource was
@@ -169,11 +170,11 @@ func (p *Packet) Set(v any) error {
 	return nil
 }
 
-// Fill fills the fields in a namespace struct using data from the packet.
+// Get fills the fields in a namespace struct using data from the packet.
 //
 // The argument dst must be a pointer to an XMP namespace struct or the
 // function will panic.
-func (p *Packet) Fill(dst any) {
+func (p *Packet) Get(dst any) {
 	s := reflect.Indirect(reflect.ValueOf(dst))
 	st := s.Type()
 
