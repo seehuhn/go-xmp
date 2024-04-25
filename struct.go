@@ -83,8 +83,7 @@ type DublinCore struct {
 
 // XMP represents the XMP basic namespace.
 //
-// See section 8.4 of ISO 16684-1:2011 and also
-// https://developer.adobe.com/xmp/docs/XMPNamespaces/xmp/ .
+// See section 8.4 of ISO 16684-1:2011 for details.
 type XMP struct {
 	_ Namespace `xmp:"http://ns.adobe.com/xap/1.0/"`
 	_ Prefix    `xmp:"xmp"`
@@ -117,17 +116,51 @@ type XMP struct {
 	// The value must be -1 (rejected), 0 (unrated) or a rating in the range
 	// (0, 5].
 	Rating Real
+}
 
-	// BaseUrl is the base URL for relative URLs in the document content. If
-	// this document contains Internet links, and those links are relative,
-	// they are relative to this base URL.
-	BaseURL URL
+// Rights represents the XMP Rights Management namespace.
+//
+// See section 8.5 of ISO 16684-1:2011 for details.
+type Rights struct {
+	_ Namespace `xmp:"http://ns.adobe.com/xap/1.0/rights/"`
+	_ Prefix    `xmpRights:"xmpRights"`
 
-	// Nickname is a short informal name for the resource.
-	Nickname Text
+	// Certificate is a reference to a digital certificate that can be used to
+	// verify the rights management information.
+	//
+	// For historical reasons, this field has type Text instead of URL.
+	Certificate Text
 
-	// Thumbnails is a list of thumbnail images for the resource.
-	// Thumbnails AlternativeArray[Thumbnail]
+	// Marked is true if the document has been marked as copyrighted.
+	Marked OptionalBool
+
+	// Owner is a list of legal owners of the resource.
+	Owner UnorderedArray[ProperName]
+
+	// UsageTerms is a statement that specifies the terms and conditions under
+	// which the document can be used.
+	UsageTerms Localized
+
+	// WebStatement is a URL that can be used to access a rights management
+	// information statement.
+	//
+	// For historical reasons, this field has type Text instead of URL.
+	WebStatement Text
+}
+
+// MediaManagement represents the XMP Media Management namespace.
+//
+// See section 8.6 of ISO 16684-1:2011 for details.
+type MediaManagement struct {
+	_ Namespace `xmp:"http://ns.adobe.com/xap/1.0/mm/"`
+	_ Prefix    `xmpMM:"xmpMM"`
+
+	// DerivedFrom is a reference to a resource from which the present resource
+	// is derived, either in whole or in part.  Missing fields are assumed to
+	// be unchanged from the source.
+	DerivedFrom ResourceRef
+
+	// TODO(voss): finish this
 }
 
 // Set sets all the (non-zero) fields from a namespace struct.

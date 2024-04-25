@@ -17,6 +17,7 @@
 package xmp
 
 import (
+	"encoding/xml"
 	"mime"
 	"net/url"
 	"regexp"
@@ -132,6 +133,34 @@ func (AgentName) DecodeAnother(val Raw) (Value, error) {
 		return nil, ErrInvalid
 	}
 	return AgentName{v.Value, v.Q}, nil
+}
+
+// GUID represents a globally unique identifier.
+type GUID struct {
+	V string
+	Q
+}
+
+// IsZero implements the [Value] interface.
+func (t GUID) IsZero() bool {
+	return t.V == "" && len(t.Q) == 0
+}
+
+// GetXMP implements the [Value] interface.
+func (t GUID) GetXMP() Raw {
+	return RawText{
+		Value: t.V,
+		Q:     t.Q,
+	}
+}
+
+// DecodeAnother implements the [Value] interface.
+func (GUID) DecodeAnother(val Raw) (Value, error) {
+	v, ok := val.(RawText)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	return GUID{v.Value, v.Q}, nil
 }
 
 // URL represents an XMP URL value.
@@ -365,6 +394,78 @@ func (m MimeType) DecodeAnother(val Raw) (Value, error) {
 	}, nil
 }
 
+// OptionalBool represents an optional boolean value,
+// with the values "True", "False", and unset.
+type OptionalBool struct {
+	V int // 0 = unset, 1 = false, 2 = true
+	Q
+}
+
+func (o OptionalBool) String() string {
+	switch o.V {
+	case 1:
+		return "False"
+	case 2:
+		return "True"
+	}
+	return ""
+}
+
+// IsTrue returns true if the value is set to true.
+func (o OptionalBool) IsTrue() bool {
+	return o.V == 2
+}
+
+// IsFalse returns true if the value is set to false.
+// Note that this is different from the value being unset.
+func (o OptionalBool) IsFalse() bool {
+	return o.V == 1
+}
+
+// IsZero implements the [Value] interface.
+func (o OptionalBool) IsZero() bool {
+	return o.V == 0 && len(o.Q) == 0
+}
+
+// GetXMP implements the [Value] interface.
+func (o OptionalBool) GetXMP() Raw {
+	switch o.V {
+	case 1:
+		return RawText{
+			Value: "False",
+			Q:     o.Q,
+		}
+	case 2:
+		return RawText{
+			Value: "True",
+			Q:     o.Q,
+		}
+	}
+	return RawText{
+		Value: "",
+		Q:     o.Q,
+	}
+}
+
+// DecodeAnother implements the [Value] interface.
+func (OptionalBool) DecodeAnother(val Raw) (Value, error) {
+	v, ok := val.(RawText)
+	if !ok {
+		return nil, ErrInvalid
+	}
+
+	switch strings.ToLower(v.Value) {
+	case "true", "1":
+		return OptionalBool{V: 2, Q: v.Q}, nil
+	case "false", "0":
+		return OptionalBool{V: 1, Q: v.Q}, nil
+	case "":
+		return OptionalBool{V: 0, Q: v.Q}, nil
+	default:
+		return nil, ErrInvalid
+	}
+}
+
 // UnorderedArray represents an unordered array of values.
 type UnorderedArray[E Value] struct {
 	V []E
@@ -427,6 +528,7 @@ type OrderedArray[E Value] struct {
 	Q
 }
 
+// Append adds a new value to the array.
 func (o *OrderedArray[E]) Append(v E) {
 	o.V = append(o.V, v)
 }
@@ -614,4 +716,52 @@ func (Localized) DecodeAnother(val Raw) (Value, error) {
 		}
 	}
 	return res, nil
+}
+
+type ResourceRef struct {
+	// DocumentID is the document ID of the referenced resource,
+	// as found in the xmpMM:DocumentID field.
+	DocumentID GUID
+
+	// FilePath is the file path or URL of the referenced resource.
+	FilePath URL
+
+	// InstanceID is the instance ID of the referenced resource,
+	// as found in the xmpMM:InstanceID field.
+	InstanceID GUID
+
+	ReditionClass Text // TODO(voss): change the type to "RenditionClass"
+
+	RenditionParams Text
+
+	Q
+}
+
+// IsZero implements the [Value] interface.
+func (r *ResourceRef) IsZero() bool {
+	return r == nil
+}
+
+// GetXMP implements the [Value] interface.
+func (r *ResourceRef) GetXMP() Raw {
+	ns := "http://ns.adobe.com/xap/1.0/sType/ResourceRef#"
+	// TODO(voss): how to set the "stRef" prefix for this namespace?
+	res := &RawStruct{}
+	if !r.DocumentID.IsZero() {
+		res.Value[xml.Name{Space: ns, Local: "documentID"}] = r.DocumentID.GetXMP()
+	}
+	if !r.FilePath.IsZero() {
+		res.Value[xml.Name{Space: ns, Local: "filePath"}] = r.FilePath.GetXMP()
+	}
+	if !r.InstanceID.IsZero() {
+		res.Value[xml.Name{Space: ns, Local: "instanceID"}] = r.InstanceID.GetXMP()
+	}
+	if !r.ReditionClass.IsZero() {
+		res.Value[xml.Name{Space: ns, Local: "reditionClass"}] = r.ReditionClass.GetXMP()
+	}
+	if !r.RenditionParams.IsZero() {
+		res.Value[xml.Name{Space: ns, Local: "renditionParams"}] = r.RenditionParams.GetXMP()
+	}
+
+	return res
 }
