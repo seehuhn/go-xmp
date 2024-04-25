@@ -17,8 +17,6 @@
 package xmp
 
 import (
-	"bytes"
-	"fmt"
 	"testing"
 	"time"
 
@@ -46,10 +44,10 @@ func TestTag(t *testing.T) {
 		t.Errorf("dc1 and dc2 differ (-want +got):\n%s", d)
 	}
 
-	buf := &bytes.Buffer{}
-	err = p.Write(buf, &PacketOptions{Pretty: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	fmt.Println(buf.String())
+	// buf := &bytes.Buffer{}
+	// err = p.Write(buf, &PacketOptions{Pretty: true})
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	// fmt.Println(buf.String())
 }

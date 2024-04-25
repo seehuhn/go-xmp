@@ -258,7 +258,6 @@ func (p *Packet) Get(dst any) {
 		val := fVal.Interface().(Value)
 		u, err := val.DecodeAnother(xmpData)
 		if err != nil {
-			fmt.Println(">>>", propertyName, err, xmpData)
 			continue
 		}
 		fVal.Set(reflect.ValueOf(u))

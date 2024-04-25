@@ -608,6 +608,8 @@ func TestIsValidPropertyName(t *testing.T) {
 		// all of the xml: namespace is forbidden
 		{nameXMLLang, false},
 		{xml.Name{Space: xmlNamespace, Local: "p"}, false},
+
+		{xml.Name{Space: "0", Local: ":"}, false},
 	}
 	for i, tc := range tests {
 		t.Run(fmt.Sprintf("%02d", i), func(t *testing.T) {
@@ -685,6 +687,10 @@ func FuzzRoundTrip(f *testing.F) {
 
 		p2, err := Read(bytes.NewReader(body2))
 		if err != nil {
+			fmt.Println()
+			fmt.Println(string(body))
+			fmt.Println()
+			fmt.Println(string(body2))
 			t.Fatal(err)
 		}
 

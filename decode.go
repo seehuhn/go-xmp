@@ -21,6 +21,9 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
+
+	"seehuhn.de/go/xmp/jvxml"
 )
 
 // Read reads an XMP packet from a reader.
@@ -554,7 +557,10 @@ func getChildElements(tokens []xml.Token) []childElement {
 }
 
 func isValidPropertyName(n xml.Name) bool {
-	if n.Space == "" || n.Local == "" || n.Space == xmlNamespace {
+	if n.Space == "" || n.Space == xmlNamespace {
+		return false
+	}
+	if !jvxml.IsName([]byte(n.Local)) || strings.Contains(n.Local, ":") {
 		return false
 	}
 	if n.Space == rdfNamespace && n != nameRDFType {
