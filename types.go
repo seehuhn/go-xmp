@@ -472,7 +472,7 @@ type UnorderedArray[E Value] struct {
 	Q
 }
 
-func (u UnorderedArray[E]) Append(v E) {
+func (u *UnorderedArray[E]) Append(v E) {
 	u.V = append(u.V, v)
 }
 
