@@ -81,7 +81,7 @@ tokenLoop:
 						// unqualified values may be replaced with attributes
 						// in the rdf:Description element.
 						if isValidPropertyName(a.Name) {
-							p.Properties[a.Name] = RawText{Value: a.Value}
+							p.Properties[a.Name] = Text{V: a.Value}
 						}
 					}
 				}
@@ -141,7 +141,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 		// See appendix C.2.7 (The literalPropertyElt) of ISO 16684-1:2011.
 		for _, a := range start.Attr {
 			if isValidQualifierName(a.Name) {
-				qq = append(qq, Qualifier{Name: a.Name, Value: RawText{Value: a.Value}})
+				qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 			}
 		}
 
@@ -151,7 +151,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				text += string(c)
 			}
 		}
-		return RawText{Value: text, Q: qq}
+		return Text{V: text, Q: qq}
 
 	case resourcePropertyElt:
 		// A resourcePropertyElt most commonly represents an XMP struct or
@@ -165,7 +165,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 		// See appendix C.2.6 (The resourcePropertyElt) of ISO 16684-1:2011.
 		for _, a := range start.Attr {
 			if a.Name == nameXMLLang {
-				qq = append(qq, Qualifier{Name: a.Name, Value: RawText{Value: a.Value}})
+				qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 			}
 		}
 
@@ -199,7 +199,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			if attrIdx >= 0 || valueIdx >= 0 {
 				for _, a := range descStart.Attr {
 					if isValidQualifierName(a.Name) { // this excludes elemRDFValue
-						qq = append(qq, Qualifier{Name: a.Name, Value: RawText{Value: a.Value}})
+						qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 					}
 				}
 
@@ -213,12 +213,12 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				}
 
 				if attrIdx >= 0 {
-					return RawText{Value: descStart.Attr[attrIdx].Value, Q: qq}
+					return Text{V: descStart.Attr[attrIdx].Value, Q: qq}
 				}
 				f := fields[valueIdx]
 				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
 				if val == nil {
-					val = RawText{Value: ""}
+					val = Text{V: ""}
 				}
 				return val
 			}
@@ -229,7 +229,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			}
 			for _, a := range descStart.Attr {
 				if isValidPropertyName(a.Name) { // this excludes xml:lang
-					res.Value[a.Name] = RawText{Value: a.Value}
+					res.Value[a.Name] = Text{V: a.Value}
 				}
 			}
 			for _, f := range fields {
@@ -274,7 +274,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			typeURLString := child.name.Space + child.name.Local
 			typeURL, _ := url.Parse(typeURLString)
 			if typeURL != nil {
-				qq = append(qq, Qualifier{Name: nameRDFType, Value: RawURI{Value: typeURL}})
+				qq = append(qq, Qualifier{Name: nameRDFType, Value: URL{V: typeURL}})
 			}
 
 			// General qualifiers are distinguished from structs by the presence
@@ -299,7 +299,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				f := fields[valueIdx]
 				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
 				if val == nil {
-					val = RawText{Value: ""}
+					val = Text{V: ""}
 				}
 				return val
 			}
@@ -331,7 +331,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 
 		for _, a := range start.Attr {
 			if a.Name == nameXMLLang {
-				qq = append(qq, Qualifier{Name: a.Name, Value: RawText{Value: a.Value}})
+				qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 			}
 		}
 
@@ -413,10 +413,10 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				if a.Name == nameRDFValue {
 					value = a.Value
 				} else if isValidQualifierName(a.Name) {
-					qq = append(qq, Qualifier{Name: a.Name, Value: RawText{Value: a.Value}})
+					qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 				}
 			}
-			return RawText{Value: value, Q: qq}
+			return Text{V: value, Q: qq}
 		case isURIProperty:
 			// If there is an rdf:resource attribute, then this is a simple
 			// property with a URI value.  All other attributes are qualifiers.
@@ -425,26 +425,26 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				if a.Name == nameRDFResource {
 					uriString = a.Value
 				} else if isValidQualifierName(a.Name) {
-					qq = append(qq, Qualifier{Name: a.Name, Value: RawText{Value: a.Value}})
+					qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 				}
 			}
 			uri, err := url.Parse(uriString)
 			if err != nil {
 				return nil
 			}
-			return RawURI{Value: uri, Q: qq}
+			return URL{V: uri, Q: qq}
 		case isEmptyValue:
 			// If there are no attributes other than xml:lang, rdf:ID, or
 			// rdf:nodeID, then this is a simple property with an empty value.
 			for _, a := range start.Attr {
 				if a.Name == nameXMLLang {
-					res := RawText{
-						Q: Q{{Name: nameXMLLang, Value: RawText{Value: a.Value}}},
+					res := Text{
+						Q: Q{{Name: nameXMLLang, Value: Text{V: a.Value}}},
 					}
 					return res
 				}
 			}
-			return RawText{}
+			return Text{}
 		default:
 			// Otherwise, this is a struct, and the attributes other than
 			// xml:lang, rdf:ID, or rdf:nodeID are the fields.
@@ -454,9 +454,9 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			}
 			for _, a := range start.Attr {
 				if a.Name == nameXMLLang {
-					res.Q = append(res.Q, Qualifier{Name: a.Name, Value: RawText{Value: a.Value}})
+					res.Q = append(res.Q, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 				} else if isValidPropertyName(a.Name) {
-					res.Value[a.Name] = RawText{Value: a.Value}
+					res.Value[a.Name] = Text{V: a.Value}
 				}
 			}
 			return res

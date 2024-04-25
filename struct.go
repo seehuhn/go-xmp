@@ -118,12 +118,12 @@ type XMP struct {
 	Rating Real
 }
 
-// Rights represents the XMP Rights Management namespace.
+// RightsManagement represents the XMP RightsManagement Management namespace.
 //
 // See section 8.5 of ISO 16684-1:2011 for details.
-type Rights struct {
+type RightsManagement struct {
 	_ Namespace `xmp:"http://ns.adobe.com/xap/1.0/rights/"`
-	_ Prefix    `xmpRights:"xmpRights"`
+	_ Prefix    `xmp:"xmpRights"`
 
 	// Certificate is a reference to a digital certificate that can be used to
 	// verify the rights management information.
@@ -153,14 +153,27 @@ type Rights struct {
 // See section 8.6 of ISO 16684-1:2011 for details.
 type MediaManagement struct {
 	_ Namespace `xmp:"http://ns.adobe.com/xap/1.0/mm/"`
-	_ Prefix    `xmpMM:"xmpMM"`
+	_ Prefix    `xmp:"xmpMM"`
 
 	// DerivedFrom is a reference to a resource from which the present resource
 	// is derived, either in whole or in part.  Missing fields are assumed to
 	// be unchanged from the source.
 	DerivedFrom ResourceRef
 
-	// TODO(voss): finish this
+	// DocumentID is a unique identifier for the document.
+	DocumentID Text
+
+	// InstanceID is a unique identifier for the document instance.
+	InstanceID Text
+
+	// OriginalDocumentID is a unique identifier for the original document.
+	OriginalDocumentID Text
+
+	// RenditionClass is a rendition class name for this resource.
+	RenditionClass Text
+
+	// RenditionParams can be used to provide additional rendition parameters
+	RenditionParams Text
 }
 
 // Set sets all the (non-zero) fields from a namespace struct.

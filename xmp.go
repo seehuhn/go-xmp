@@ -78,7 +78,7 @@ func GetValue[E Value](p *Packet, namespace, propertyName string) (E, error) {
 	return u.(E), nil
 }
 
-// Raw is one of [RawText], [RawURI], [RawStruct], or [RawArray].
+// Raw is one of [Text], [URL], [RawStruct], or [RawArray].
 type Raw interface {
 	getNamespaces(m map[string]struct{})
 	appendXML(tokens []xml.Token, name xml.Name) []xml.Token
@@ -95,7 +95,7 @@ type Qualifier struct {
 func Language(l language.Tag) Qualifier {
 	return Qualifier{
 		Name:  nameXMLLang,
-		Value: RawText{Value: l.String()},
+		Value: Text{V: l.String()},
 	}
 }
 
@@ -110,8 +110,8 @@ func (q Q) StripLanguage() (language.Tag, Q) {
 	var stripped Q
 	for _, q := range q {
 		if q.Name == nameXMLLang {
-			if v, ok := q.Value.(RawText); ok {
-				if l, err := language.Parse(v.Value); err == nil && lang == language.Und {
+			if v, ok := q.Value.(Text); ok {
+				if l, err := language.Parse(v.V); err == nil && lang == language.Und {
 					lang = l
 				}
 			}
@@ -139,8 +139,8 @@ func (q Q) WithLanguage(l language.Tag) Q {
 func (q Q) getLangAttr(attr []xml.Attr) []xml.Attr {
 	for _, q := range q {
 		if q.Name == nameXMLLang {
-			if v, ok := q.Value.(RawText); ok {
-				attr = append(attr, xml.Attr{Name: nameXMLLang, Value: v.Value})
+			if v, ok := q.Value.(Text); ok {
+				attr = append(attr, xml.Attr{Name: nameXMLLang, Value: v.V})
 			}
 		}
 	}
@@ -160,21 +160,51 @@ func (q Q) hasQualifiers() bool {
 // hasQualifiers returns true if there are any qualifiers other than xml:lang.
 func (q Q) allSimple() bool {
 	for _, q := range q {
-		if val, ok := q.Value.(RawText); !ok || len(val.Q) > 0 {
+		if val, ok := q.Value.(Text); !ok || len(val.Q) > 0 {
 			return false
 		}
 	}
 	return true
 }
 
-// RawText is a simple text (i.e. non-URI) value.
-type RawText struct {
-	Value string
+// Text is a simple text (i.e. non-URI) value.
+//
+// Text implements both the [Value] and [Raw] interfaces.
+type Text struct {
+	V string
 	Q
 }
 
+// NewText creates a new XMP text value.
+func NewText(s string, qualifiers ...Qualifier) Text {
+	return Text{V: s, Q: Q(qualifiers)}
+}
+
+func (t Text) String() string {
+	return t.V
+}
+
+// IsZero implements the [Value] interface.
+func (t Text) IsZero() bool {
+	return t.V == "" && len(t.Q) == 0
+}
+
+// GetXMP implements the [Value] interface.
+func (t Text) GetXMP() Raw {
+	return t
+}
+
+// DecodeAnother implements the [Value] interface.
+func (Text) DecodeAnother(val Raw) (Value, error) {
+	v, ok := val.(Text)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	return Text{v.V, v.Q}, nil
+}
+
 // getNamespaces implements the [Raw] interface.
-func (t RawText) getNamespaces(m map[string]struct{}) {
+func (t Text) getNamespaces(m map[string]struct{}) {
 	for _, q := range t.Q {
 		m[q.Name.Space] = struct{}{}
 		q.Value.getNamespaces(m)
@@ -182,7 +212,7 @@ func (t RawText) getNamespaces(m map[string]struct{}) {
 }
 
 // appendXML implements the [Raw] interface.
-func (t RawText) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
+func (t Text) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	// Possible ways to encode the value:
 	//
 	// option 1 (no non-lang qualifiers):
@@ -221,16 +251,16 @@ func (t RawText) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 		attr := t.Q.getLangAttr(nil)
 		tokens = append(tokens,
 			xml.StartElement{Name: name, Attr: attr},
-			xml.CharData(t.Value),
+			xml.CharData(t.V),
 			xml.EndElement{Name: name},
 		)
 	} else if t.Q.allSimple() { // use option 5
 		attr := make([]xml.Attr, 0, len(t.Q)+1)
 		for _, q := range t.Q {
 			attr = append(attr,
-				xml.Attr{Name: q.Name, Value: q.Value.(RawText).Value})
+				xml.Attr{Name: q.Name, Value: q.Value.(Text).V})
 		}
-		attr = append(attr, xml.Attr{Name: nameRDFValue, Value: t.Value})
+		attr = append(attr, xml.Attr{Name: nameRDFValue, Value: t.V})
 		tokens = append(tokens, jvxml.EmptyElement{Name: name, Attr: attr})
 	} else { // use option 4
 		attr := t.Q.getLangAttr(nil)
@@ -238,7 +268,7 @@ func (t RawText) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 		tokens = append(tokens,
 			xml.StartElement{Name: name, Attr: attr},
 			xml.StartElement{Name: nameRDFValue},
-			xml.CharData(t.Value),
+			xml.CharData(t.V),
 			xml.EndElement{Name: nameRDFValue},
 		)
 		for _, q := range t.Q {
@@ -252,14 +282,44 @@ func (t RawText) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	return tokens
 }
 
-// RawURI is a simple URI value.
-type RawURI struct {
-	Value *url.URL
+// URL is a simple URL (or URI) value.
+//
+// URL implements both the [Value] and [Raw] interfaces.
+type URL struct {
+	V *url.URL
 	Q
 }
 
+// NewURL creates a new XMP URL value.
+func NewURL(u *url.URL, qualifiers ...Qualifier) URL {
+	return URL{V: u, Q: Q(qualifiers)}
+}
+
+func (u URL) String() string {
+	return u.V.String()
+}
+
+// IsZero implements the [Value] interface.
+func (u URL) IsZero() bool {
+	return u.V == nil && len(u.Q) == 0
+}
+
+// GetXMP implements the [Value] interface.
+func (u URL) GetXMP() Raw {
+	return u
+}
+
+// DecodeAnother implements the [Value] interface.
+func (URL) DecodeAnother(val Raw) (Value, error) {
+	v, ok := val.(URL)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	return URL{v.V, v.Q}, nil
+}
+
 // getNamespaces implements the [Raw] interface.
-func (u RawURI) getNamespaces(m map[string]struct{}) {
+func (u URL) getNamespaces(m map[string]struct{}) {
 	for _, q := range u.Q {
 		m[q.Name.Space] = struct{}{}
 		q.Value.getNamespaces(m)
@@ -267,7 +327,7 @@ func (u RawURI) getNamespaces(m map[string]struct{}) {
 }
 
 // appendXML implements the [Raw] interface.
-func (u RawURI) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
+func (u URL) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	// Possible ways to encode the value:
 	//
 	// option 1 (no non-lang qualifiers):
@@ -301,7 +361,7 @@ func (u RawURI) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 		tokens = append(tokens,
 			xml.StartElement{Name: name, Attr: attr},
 			jvxml.EmptyElement{Name: nameRDFValue,
-				Attr: []xml.Attr{{Name: nameRDFResource, Value: u.Value.String()}},
+				Attr: []xml.Attr{{Name: nameRDFResource, Value: u.V.String()}},
 			},
 		)
 		for _, q := range u.Q {
@@ -314,7 +374,7 @@ func (u RawURI) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	} else { // use option 1
 		attr = append(attr, xml.Attr{
 			Name:  nameRDFResource,
-			Value: u.Value.String(),
+			Value: u.V.String(),
 		})
 		tokens = append(tokens,
 			jvxml.EmptyElement{Name: name, Attr: attr},
@@ -421,7 +481,7 @@ func (s RawStruct) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 		for _, fieldName := range fieldNames {
 			attr = append(attr, xml.Attr{
 				Name:  fieldName,
-				Value: s.Value[fieldName].(RawText).Value,
+				Value: s.Value[fieldName].(Text).V,
 			})
 		}
 		tokens = append(tokens, jvxml.EmptyElement{Name: name, Attr: attr})
@@ -452,7 +512,7 @@ func (s *RawStruct) fieldNames() []xml.Name {
 // qualifiers.
 func (s *RawStruct) allSimple() bool {
 	for _, v := range s.Value {
-		if v, ok := v.(RawText); !ok || len(v.Q) > 0 {
+		if v, ok := v.(Text); !ok || len(v.Q) > 0 {
 			return false
 		}
 	}

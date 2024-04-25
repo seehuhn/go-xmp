@@ -19,7 +19,6 @@ package xmp
 import (
 	"encoding/xml"
 	"mime"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,43 +26,6 @@ import (
 
 	"golang.org/x/text/language"
 )
-
-// Text represents a simple text value.
-type Text struct {
-	V string
-	Q
-}
-
-// NewText creates a new XMP text value.
-func NewText(s string, qualifiers ...Qualifier) Text {
-	return Text{V: s, Q: Q(qualifiers)}
-}
-
-func (t Text) String() string {
-	return t.V
-}
-
-// IsZero implements the [Value] interface.
-func (t Text) IsZero() bool {
-	return t.V == "" && len(t.Q) == 0
-}
-
-// GetXMP implements the [Value] interface.
-func (t Text) GetXMP() Raw {
-	return RawText{
-		Value: t.V,
-		Q:     t.Q,
-	}
-}
-
-// DecodeAnother implements the [Value] interface.
-func (Text) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
-	if !ok {
-		return nil, ErrInvalid
-	}
-	return Text{v.Value, v.Q}, nil
-}
 
 // ProperName represents a proper name.
 type ProperName struct {
@@ -82,19 +44,19 @@ func (p ProperName) IsZero() bool {
 
 // GetXMP implements the [Value] interface.
 func (p ProperName) GetXMP() Raw {
-	return RawText{
-		Value: p.V,
-		Q:     p.Q,
+	return Text{
+		V: p.V,
+		Q: p.Q,
 	}
 }
 
 // DecodeAnother implements the [Value] interface.
 func (ProperName) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
+	v, ok := val.(Text)
 	if !ok {
 		return nil, ErrInvalid
 	}
-	return ProperName{v.Value, v.Q}, nil
+	return ProperName{v.V, v.Q}, nil
 }
 
 // AgentName represents the name of some document creator software.
@@ -120,19 +82,59 @@ func (t AgentName) IsZero() bool {
 
 // GetXMP implements the [Value] interface.
 func (t AgentName) GetXMP() Raw {
-	return RawText{
-		Value: t.V,
-		Q:     t.Q,
+	return Text{
+		V: t.V,
+		Q: t.Q,
 	}
 }
 
 // DecodeAnother implements the [Value] interface.
 func (AgentName) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
+	v, ok := val.(Text)
 	if !ok {
 		return nil, ErrInvalid
 	}
-	return AgentName{v.Value, v.Q}, nil
+	return AgentName{v.V, v.Q}, nil
+}
+
+// RenditionClass states the form or intended usage of a resource.  This is a
+// series of colon-separated values, the first of which names the basic usage of
+// the rendition and the rest are parameters.
+//
+// Defined values:
+//   - "default": the default rendition of the resource (no parameters).
+//   - "draft": a draft version of the resource.
+//   - "low-res": a low-resolution version of the resource.
+//   - "proof": a review proof.
+//   - "screen": a screen-optimized version of the resource.
+//   - "thumbnail": a thumbnail image.
+//
+// Example: "thumbnail:gif:8x8:bw"
+type RenditionClass struct {
+	V string
+	Q
+}
+
+// IsZero implements the [Value] interface.
+func (t RenditionClass) IsZero() bool {
+	return t.V == "" && len(t.Q) == 0
+}
+
+// GetXMP implements the [Value] interface.
+func (t RenditionClass) GetXMP() Raw {
+	return Text{
+		V: t.V,
+		Q: t.Q,
+	}
+}
+
+// DecodeAnother implements the [Value] interface.
+func (RenditionClass) DecodeAnother(val Raw) (Value, error) {
+	v, ok := val.(Text)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	return RenditionClass{v.V, v.Q}, nil
 }
 
 // GUID represents a globally unique identifier.
@@ -148,56 +150,19 @@ func (t GUID) IsZero() bool {
 
 // GetXMP implements the [Value] interface.
 func (t GUID) GetXMP() Raw {
-	return RawText{
-		Value: t.V,
-		Q:     t.Q,
+	return Text{
+		V: t.V,
+		Q: t.Q,
 	}
 }
 
 // DecodeAnother implements the [Value] interface.
 func (GUID) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
+	v, ok := val.(Text)
 	if !ok {
 		return nil, ErrInvalid
 	}
-	return GUID{v.Value, v.Q}, nil
-}
-
-// URL represents an XMP URL value.
-type URL struct {
-	V *url.URL
-	Q
-}
-
-// NewURL creates a new XMP URL value.
-func NewURL(u *url.URL, qualifiers ...Qualifier) URL {
-	return URL{V: u, Q: Q(qualifiers)}
-}
-
-func (u URL) String() string {
-	return u.V.String()
-}
-
-// IsZero implements the [Value] interface.
-func (u URL) IsZero() bool {
-	return u.V == nil && len(u.Q) == 0
-}
-
-// GetXMP implements the [Value] interface.
-func (u URL) GetXMP() Raw {
-	return RawURI{
-		Value: u.V,
-		Q:     u.Q,
-	}
-}
-
-// DecodeAnother implements the [Value] interface.
-func (URL) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawURI)
-	if !ok {
-		return nil, ErrInvalid
-	}
-	return URL{v.Value, v.Q}, nil
+	return GUID{v.V, v.Q}, nil
 }
 
 // Real represents a floating-point number.
@@ -224,9 +189,9 @@ func (r Real) GetXMP() Raw {
 	if strings.HasPrefix(out, "0.") {
 		out = out[1:]
 	}
-	return RawText{
-		Value: out,
-		Q:     r.Q,
+	return Text{
+		V: out,
+		Q: r.Q,
 	}
 }
 
@@ -236,11 +201,11 @@ var (
 
 // DecodeAnother implements the [Value] interface.
 func (Real) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
+	v, ok := val.(Text)
 	if !ok {
 		return nil, ErrInvalid
 	}
-	f, err := strconv.ParseFloat(v.Value, 64)
+	f, err := strconv.ParseFloat(v.V, 64)
 	if err != nil {
 		return nil, ErrInvalid
 	}
@@ -270,19 +235,19 @@ func (d Date) GetXMP() Raw {
 	numOmitted = min(numOmitted, len(dateFormats)-1)
 	numOmitted = max(numOmitted, 0)
 	format := dateFormats[numOmitted]
-	return RawText{
-		Value: d.V.Format(format),
-		Q:     d.Q,
+	return Text{
+		V: d.V.Format(format),
+		Q: d.Q,
 	}
 }
 
 // DecodeAnother implements the [Value] interface.
 func (Date) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
+	v, ok := val.(Text)
 	if !ok {
 		return nil, ErrInvalid
 	}
-	dateString := v.Value
+	dateString := v.V
 
 	for i, format := range dateFormats {
 		t, err := time.Parse(format, dateString)
@@ -329,19 +294,19 @@ func (l Locale) IsZero() bool {
 
 // GetXMP implements the [Value] interface.
 func (l Locale) GetXMP() Raw {
-	return RawText{
-		Value: l.V.String(),
-		Q:     l.Q,
+	return Text{
+		V: l.V.String(),
+		Q: l.Q,
 	}
 }
 
 // DecodeAnother implements the [Value] interface.
 func (Locale) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
+	v, ok := val.(Text)
 	if !ok {
 		return nil, ErrInvalid
 	}
-	tag, err := language.Parse(v.Value)
+	tag, err := language.Parse(v.V)
 	if err != nil {
 		return nil, ErrInvalid
 	}
@@ -371,19 +336,19 @@ func (m MimeType) IsZero() bool {
 
 // GetXMP implements the [Value] interface.
 func (m MimeType) GetXMP() Raw {
-	return RawText{
-		Value: mime.FormatMediaType(m.V, m.Param),
-		Q:     m.Q,
+	return Text{
+		V: mime.FormatMediaType(m.V, m.Param),
+		Q: m.Q,
 	}
 }
 
 // DecodeAnother implements the [Value] interface.
 func (m MimeType) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
+	v, ok := val.(Text)
 	if !ok {
 		return nil, ErrInvalid
 	}
-	mt, param, err := mime.ParseMediaType(v.Value)
+	mt, param, err := mime.ParseMediaType(v.V)
 	if err != nil {
 		return nil, ErrInvalid
 	}
@@ -431,30 +396,30 @@ func (o OptionalBool) IsZero() bool {
 func (o OptionalBool) GetXMP() Raw {
 	switch o.V {
 	case 1:
-		return RawText{
-			Value: "False",
-			Q:     o.Q,
+		return Text{
+			V: "False",
+			Q: o.Q,
 		}
 	case 2:
-		return RawText{
-			Value: "True",
-			Q:     o.Q,
+		return Text{
+			V: "True",
+			Q: o.Q,
 		}
 	}
-	return RawText{
-		Value: "",
-		Q:     o.Q,
+	return Text{
+		V: "",
+		Q: o.Q,
 	}
 }
 
 // DecodeAnother implements the [Value] interface.
 func (OptionalBool) DecodeAnother(val Raw) (Value, error) {
-	v, ok := val.(RawText)
+	v, ok := val.(Text)
 	if !ok {
 		return nil, ErrInvalid
 	}
 
-	switch strings.ToLower(v.Value) {
+	switch strings.ToLower(v.V) {
 	case "true", "1":
 		return OptionalBool{V: 2, Q: v.Q}, nil
 	case "false", "0":
@@ -663,16 +628,16 @@ func (l Localized) GetXMP() Raw {
 	var vals []Raw
 
 	if l.Default.V != "" {
-		t := RawText{
-			Value: l.Default.V,
-			Q:     l.Default.Q.WithLanguage(defaultLanguage),
+		t := Text{
+			V: l.Default.V,
+			Q: l.Default.Q.WithLanguage(defaultLanguage),
 		}
 		vals = append(vals, t)
 	}
 	for lang, txt := range l.V {
-		t := RawText{
-			Value: txt.V,
-			Q:     txt.Q.WithLanguage(lang),
+		t := Text{
+			V: txt.V,
+			Q: txt.Q.WithLanguage(lang),
 		}
 		vals = append(vals, t)
 	}
@@ -704,20 +669,21 @@ func (Localized) DecodeAnother(val Raw) (Value, error) {
 		Q: a.Q,
 	}
 	for _, val := range a.Value {
-		v, ok := val.(RawText)
+		v, ok := val.(Text)
 		if !ok {
 			return nil, ErrInvalid
 		}
 		lang, Q := v.Q.StripLanguage()
 		if lang == defaultLanguage {
-			res.Default = Text{V: v.Value, Q: Q}
+			res.Default = Text{V: v.V, Q: Q}
 		} else {
-			res.V[lang] = Text{V: v.Value, Q: Q}
+			res.V[lang] = Text{V: v.V, Q: Q}
 		}
 	}
 	return res, nil
 }
 
+// ResourceRef represents a reference to an external resource.
 type ResourceRef struct {
 	// DocumentID is the document ID of the referenced resource,
 	// as found in the xmpMM:DocumentID field.
@@ -730,7 +696,7 @@ type ResourceRef struct {
 	// as found in the xmpMM:InstanceID field.
 	InstanceID GUID
 
-	ReditionClass Text // TODO(voss): change the type to "RenditionClass"
+	RenditionClass RenditionClass
 
 	RenditionParams Text
 
@@ -756,8 +722,8 @@ func (r *ResourceRef) GetXMP() Raw {
 	if !r.InstanceID.IsZero() {
 		res.Value[xml.Name{Space: ns, Local: "instanceID"}] = r.InstanceID.GetXMP()
 	}
-	if !r.ReditionClass.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "reditionClass"}] = r.ReditionClass.GetXMP()
+	if !r.RenditionClass.IsZero() {
+		res.Value[xml.Name{Space: ns, Local: "renditionClass"}] = r.RenditionClass.GetXMP()
 	}
 	if !r.RenditionParams.IsZero() {
 		res.Value[xml.Name{Space: ns, Local: "renditionParams"}] = r.RenditionParams.GetXMP()
