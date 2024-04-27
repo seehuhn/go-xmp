@@ -176,8 +176,17 @@ type MediaManagement struct {
 	RenditionParams Text
 }
 
-// Set sets all the (non-zero) fields from a namespace struct.
-func (p *Packet) Set(v any) error {
+// Set sets XMP properties from the fields of a namespace struct.
+func (p *Packet) Set(models ...any) error {
+	for _, v := range models {
+		if err := p.setOne(v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (p *Packet) setOne(v any) error {
 	s := reflect.Indirect(reflect.ValueOf(v))
 	if s.Kind() != reflect.Struct {
 		return errors.New("no struct found")
@@ -222,6 +231,8 @@ func (p *Packet) Set(v any) error {
 		}
 		if !val.IsZero() {
 			p.SetValue(namespace, propertyName, val)
+		} else {
+			p.ClearValue(namespace, propertyName)
 		}
 	}
 
@@ -265,6 +276,7 @@ func (p *Packet) Get(dst any) {
 		name := xml.Name{Space: namespace, Local: propertyName}
 		xmpData, ok := p.Properties[name]
 		if !ok {
+			fVal.Set(reflect.Zero(fInfo.Type)) // zero missing fields
 			continue
 		}
 

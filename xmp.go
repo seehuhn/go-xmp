@@ -42,22 +42,33 @@ type Packet struct {
 func NewPacket() *Packet {
 	return &Packet{
 		Properties: make(map[xml.Name]Raw),
-		nsToPrefix: make(map[string]string),
 	}
 }
 
 // RegisterPrefix registers a namespace prefix.
 func (p *Packet) RegisterPrefix(ns, prefix string) {
+	if p.nsToPrefix == nil {
+		p.nsToPrefix = make(map[string]string)
+	}
 	p.nsToPrefix[ns] = prefix
 }
 
 // SetValue stores the given value in the packet.
 func (p *Packet) SetValue(namespace, propertyName string, value Value) {
+	if !isValidPropertyName(xml.Name{Space: namespace, Local: propertyName}) {
+		panic("invalid property name")
+	}
 	name := xml.Name{Space: namespace, Local: propertyName}
 	if !isValidPropertyName(name) {
 		panic("invalid property name")
 	}
 	p.Properties[name] = value.GetXMP()
+}
+
+// ClearValue removes the given property from the packet.
+func (p *Packet) ClearValue(namespace, propertyName string) {
+	name := xml.Name{Space: namespace, Local: propertyName}
+	delete(p.Properties, name)
 }
 
 // GetValue retrieves the value of the given property from the packet.

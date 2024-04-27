@@ -101,6 +101,7 @@ type encoder struct {
 
 // newEncoder returns a new encoder that writes to w.
 func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
+	// Gather a list of all namespaces used in the packet.
 	nsUsed := make(map[string]struct{})
 	nsUsed[xmlNamespace] = struct{}{}
 	nsUsed[rdfNamespace] = struct{}{}
@@ -111,15 +112,14 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 	nsList := maps.Keys(nsUsed)
 	sort.Strings(nsList)
 
+	// Fix the namespace prefixes.
 	nsToPrefix := make(map[string]string)
 	prefixToNS := make(map[string]string)
 	// register default namespaces first, ...
-	for _, ns := range nsList {
-		if pfx, isDefault := defaultPrefix[ns]; isDefault {
-			nsToPrefix[ns] = pfx
-			prefixToNS[pfx] = ns
-		}
-	}
+	nsToPrefix[xmlNamespace] = "xml"
+	prefixToNS["xml"] = xmlNamespace
+	nsToPrefix[rdfNamespace] = "rdf"
+	prefixToNS["rdf"] = rdfNamespace
 	// ... then the ones registered in the packet, ...
 	for _, ns := range nsList {
 		if _, alreadyDone := nsToPrefix[ns]; alreadyDone {

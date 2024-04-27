@@ -33,6 +33,11 @@ type ProperName struct {
 	Q
 }
 
+// NewProperName creates a new XMP proper name value.
+func NewProperName(v string, qualifiers ...Qualifier) ProperName {
+	return ProperName{V: v, Q: Q(qualifiers)}
+}
+
 func (p ProperName) String() string {
 	return p.V
 }
@@ -75,16 +80,25 @@ type AgentName struct {
 	Q
 }
 
+// NewAgentName creates a new XMP AgentName object.
+func NewAgentName(v string, qualifiers ...Qualifier) AgentName {
+	return AgentName{V: v, Q: Q(qualifiers)}
+}
+
+func (a AgentName) String() string {
+	return a.V
+}
+
 // IsZero implements the [Value] interface.
-func (t AgentName) IsZero() bool {
-	return t.V == "" && len(t.Q) == 0
+func (a AgentName) IsZero() bool {
+	return a.V == "" && len(a.Q) == 0
 }
 
 // GetXMP implements the [Value] interface.
-func (t AgentName) GetXMP() Raw {
+func (a AgentName) GetXMP() Raw {
 	return Text{
-		V: t.V,
-		Q: t.Q,
+		V: a.V,
+		Q: a.Q,
 	}
 }
 
