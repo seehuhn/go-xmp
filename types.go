@@ -27,6 +27,16 @@ import (
 	"golang.org/x/text/language"
 )
 
+// A Value is a datatype which can be represented as XMP data.
+type Value interface {
+	IsZero() bool
+
+	// GetXMP returns the XMP representation of a value.
+	GetXMP(*Packet) Raw
+
+	DecodeAnother(Raw) (Value, error)
+}
+
 // ProperName represents a proper name.
 type ProperName struct {
 	V string
@@ -48,7 +58,7 @@ func (p ProperName) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (p ProperName) GetXMP() Raw {
+func (p ProperName) GetXMP(*Packet) Raw {
 	return Text{
 		V: p.V,
 		Q: p.Q,
@@ -95,7 +105,7 @@ func (a AgentName) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (a AgentName) GetXMP() Raw {
+func (a AgentName) GetXMP(*Packet) Raw {
 	return Text{
 		V: a.V,
 		Q: a.Q,
@@ -135,7 +145,7 @@ func (t RenditionClass) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (t RenditionClass) GetXMP() Raw {
+func (t RenditionClass) GetXMP(*Packet) Raw {
 	return Text{
 		V: t.V,
 		Q: t.Q,
@@ -163,7 +173,7 @@ func (t GUID) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (t GUID) GetXMP() Raw {
+func (t GUID) GetXMP(*Packet) Raw {
 	return Text{
 		V: t.V,
 		Q: t.Q,
@@ -191,7 +201,7 @@ func (r Real) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (r Real) GetXMP() Raw {
+func (r Real) GetXMP(*Packet) Raw {
 	out := strconv.FormatFloat(r.V, 'f', -1, 64)
 	if m := tailRegexp.FindStringSubmatchIndex(out); m != nil {
 		if m[2] > 0 {
@@ -244,7 +254,7 @@ func (d Date) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (d Date) GetXMP() Raw {
+func (d Date) GetXMP(*Packet) Raw {
 	numOmitted := d.NumOmitted
 	numOmitted = min(numOmitted, len(dateFormats)-1)
 	numOmitted = max(numOmitted, 0)
@@ -307,7 +317,7 @@ func (l Locale) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (l Locale) GetXMP() Raw {
+func (l Locale) GetXMP(*Packet) Raw {
 	return Text{
 		V: l.V.String(),
 		Q: l.Q,
@@ -349,7 +359,7 @@ func (m MimeType) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (m MimeType) GetXMP() Raw {
+func (m MimeType) GetXMP(*Packet) Raw {
 	return Text{
 		V: mime.FormatMediaType(m.V, m.Param),
 		Q: m.Q,
@@ -407,7 +417,7 @@ func (o OptionalBool) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (o OptionalBool) GetXMP() Raw {
+func (o OptionalBool) GetXMP(*Packet) Raw {
 	switch o.V {
 	case 1:
 		return Text{
@@ -461,10 +471,10 @@ func (u UnorderedArray[E]) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (u UnorderedArray[E]) GetXMP() Raw {
+func (u UnorderedArray[E]) GetXMP(p *Packet) Raw {
 	var vals []Raw
 	for _, v := range u.V {
-		vals = append(vals, v.GetXMP())
+		vals = append(vals, v.GetXMP(p))
 	}
 	return RawArray{
 		Value: vals,
@@ -518,10 +528,10 @@ func (o OrderedArray[E]) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (o OrderedArray[E]) GetXMP() Raw {
+func (o OrderedArray[E]) GetXMP(p *Packet) Raw {
 	var vals []Raw
 	for _, v := range o.V {
-		vals = append(vals, v.GetXMP())
+		vals = append(vals, v.GetXMP(p))
 	}
 	return RawArray{
 		Value: vals,
@@ -570,10 +580,10 @@ func (a AlternativeArray[E]) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (a AlternativeArray[E]) GetXMP() Raw {
+func (a AlternativeArray[E]) GetXMP(p *Packet) Raw {
 	var vals []Raw
 	for _, v := range a.V {
-		vals = append(vals, v.GetXMP())
+		vals = append(vals, v.GetXMP(p))
 	}
 	return RawArray{
 		Value: vals,
@@ -638,7 +648,7 @@ func (l Localized) IsZero() bool {
 var defaultLanguage = language.MustParse("x-default")
 
 // GetXMP implements the [Value] interface.
-func (l Localized) GetXMP() Raw {
+func (l Localized) GetXMP(*Packet) Raw {
 	var vals []Raw
 
 	if l.Default.V != "" {
@@ -723,24 +733,24 @@ func (r *ResourceRef) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (r *ResourceRef) GetXMP() Raw {
+func (r *ResourceRef) GetXMP(p *Packet) Raw {
 	ns := "http://ns.adobe.com/xap/1.0/sType/ResourceRef#"
-	// TODO(voss): how to set the "stRef" prefix for this namespace?
+	p.RegisterPrefix(ns, "stRef")
 	res := &RawStruct{}
 	if !r.DocumentID.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "documentID"}] = r.DocumentID.GetXMP()
+		res.Value[xml.Name{Space: ns, Local: "documentID"}] = r.DocumentID.GetXMP(p)
 	}
 	if !r.FilePath.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "filePath"}] = r.FilePath.GetXMP()
+		res.Value[xml.Name{Space: ns, Local: "filePath"}] = r.FilePath.GetXMP(p)
 	}
 	if !r.InstanceID.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "instanceID"}] = r.InstanceID.GetXMP()
+		res.Value[xml.Name{Space: ns, Local: "instanceID"}] = r.InstanceID.GetXMP(p)
 	}
 	if !r.RenditionClass.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "renditionClass"}] = r.RenditionClass.GetXMP()
+		res.Value[xml.Name{Space: ns, Local: "renditionClass"}] = r.RenditionClass.GetXMP(p)
 	}
 	if !r.RenditionParams.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "renditionParams"}] = r.RenditionParams.GetXMP()
+		res.Value[xml.Name{Space: ns, Local: "renditionParams"}] = r.RenditionParams.GetXMP(p)
 	}
 
 	return res

@@ -49,18 +49,13 @@ tokenLoop:
 		switch t := t.(type) {
 		case xml.StartElement:
 			if level > 0 || t.Name == nameRDFRoot {
-				// TODO(voss): currently, if a sequence of rdf:RDF elements is
-				// encountered, the contents are merged into a single packet.
-				// Should we return an error instead?
 				level++
 			} else {
+				// Ignore anything outside the rdf:RDF element.
 				continue tokenLoop
 			}
 			if descriptionLevel < 0 && t.Name == nameRDFDescription {
 				for _, a := range t.Attr {
-					if a.Name.Space == "xmlns" {
-						continue
-					}
 					switch a.Name {
 					case nameRDFAbout:
 						var aboutURL *url.URL
@@ -77,9 +72,8 @@ tokenLoop:
 							return nil, fmt.Errorf("inconsistent `about` attributes: %s != %s", p.About, aboutURL)
 						}
 					default:
-						// Property [...] elements that have non-URI simple,
-						// unqualified values may be replaced with attributes
-						// in the rdf:Description element.
+						// Simple properties can be encoded as attributes of
+						// the rdf:Description element.
 						if isValidPropertyName(a.Name) {
 							p.Properties[a.Name] = Text{V: a.Value}
 						}
@@ -95,7 +89,6 @@ tokenLoop:
 			if level == propertyLevel {
 				// propertyElement contains the XML tokens which make up the property,
 				// including the start element, but not the end element.
-
 				start := propertyElement[0].(xml.StartElement)
 				if isValidPropertyName(start.Name) {
 					val := parsePropertyElement(start, propertyElement[1:], nil)
@@ -134,11 +127,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 	tp := getProperyElementType(start, tokens)
 	switch tp {
 	case literalPropertyElt:
-		// A literalPropertyElt is the typical element form of a simple
-		// property.  The text content is the property value.  Attributes of
-		// the element become qualifiers in the XMP data model.
-		//
-		// See appendix C.2.7 (The literalPropertyElt) of ISO 16684-1:2011.
+		// See appendix C.2.7 of ISO 16684-1:2011.
 		for _, a := range start.Attr {
 			if isValidQualifierName(a.Name) {
 				qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
@@ -154,34 +143,28 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 		return Text{V: text, Q: qq}
 
 	case resourcePropertyElt:
-		// A resourcePropertyElt most commonly represents an XMP struct or
-		// array property. It can also represent a property with general
-		// qualifiers (other than xml:lang as an attribute).
-		//
-		// A resourcePropertyElt can have an xml:lang attribute; it becomes an
-		// xml:lang qualifier on the XMP value represented by the
-		// resourcePropertyElt.
-		//
-		// See appendix C.2.6 (The resourcePropertyElt) of ISO 16684-1:2011.
+		// See appendix C.2.6 of ISO 16684-1:2011.
 		for _, a := range start.Attr {
 			if a.Name == nameXMLLang {
 				qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 			}
 		}
 
-		children := getChildElements(tokens)
+		// valid XMP has exactly one child element
+		children := getChildren(tokens)
 		if len(children) == 0 {
 			return nil
 		}
-		child := children[0] // valid XMP has exactly one child element
+		child := children[0]
+
 		switch {
-		case child.name == nameRDFDescription: // a structure or general qualifiers
+		case child.name == nameRDFDescription:
 			descStart := tokens[child.start].(xml.StartElement)
 			inner := tokens[child.start+1 : child.end]
-			fields := getChildElements(inner)
+			fields := getChildren(inner)
 
-			// General qualifiers are distinguished from structs by the presence
-			// of an rdf:value field or attribute.
+			// If there is an rdf:value field or attribute, this encodes a
+			// property with general qualifiers.
 			attrIdx := -1
 			valueIdx := -1
 			for i, a := range descStart.Attr {
@@ -198,13 +181,12 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			}
 			if attrIdx >= 0 || valueIdx >= 0 {
 				for _, a := range descStart.Attr {
-					if isValidQualifierName(a.Name) { // this excludes elemRDFValue
+					if isValidQualifierName(a.Name) {
 						qq = append(qq, Qualifier{Name: a.Name, Value: Text{V: a.Value}})
 					}
 				}
-
 				for _, f := range fields {
-					if isValidQualifierName(f.name) { // this excludes elemRDFValue
+					if isValidQualifierName(f.name) {
 						val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
 						if val != nil {
 							qq = append(qq, Qualifier{Name: f.name, Value: val})
@@ -216,34 +198,30 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 					return Text{V: descStart.Attr[attrIdx].Value, Q: qq}
 				}
 				f := fields[valueIdx]
-				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
-				if val == nil {
-					val = Text{V: ""}
-				}
-				return val
+				return parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
 			}
 
+			// Otherwise, this is a structure.
 			res := RawStruct{
 				Value: make(map[xml.Name]Raw, len(fields)),
 				Q:     qq,
 			}
 			for _, a := range descStart.Attr {
-				if isValidPropertyName(a.Name) { // this excludes xml:lang
+				if isValidPropertyName(a.Name) {
 					res.Value[a.Name] = Text{V: a.Value}
 				}
 			}
 			for _, f := range fields {
-				if !isValidPropertyName(f.name) {
-					continue
-				}
-				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
-				if val != nil {
-					res.Value[f.name] = val
+				if isValidPropertyName(f.name) {
+					val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
+					if val != nil {
+						res.Value[f.name] = val
+					}
 				}
 			}
-
 			return res
-		case child.name == nameRDFBag || child.name == nameRDFSeq || child.name == nameRDFAlt: // an array
+
+		case child.name == nameRDFBag || child.name == nameRDFSeq || child.name == nameRDFAlt:
 			var tp RawArrayType
 			switch child.name {
 			case nameRDFBag:
@@ -254,7 +232,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				tp = Alternative
 			}
 			inner := tokens[child.start+1 : child.end]
-			items := getChildElements(inner)
+			items := getChildren(inner)
 			res := RawArray{
 				Value: make([]Raw, 0, len(items)),
 				Kind:  tp,
@@ -267,9 +245,9 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				}
 			}
 			return res
+
 		default: // a typed node
 			inner := tokens[child.start+1 : child.end]
-			fields := getChildElements(inner)
 
 			typeURLString := child.name.Space + child.name.Local
 			typeURL, _ := url.Parse(typeURLString)
@@ -277,8 +255,10 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				qq = append(qq, Qualifier{Name: nameRDFType, Value: URL{V: typeURL}})
 			}
 
-			// General qualifiers are distinguished from structs by the presence
-			// of an rdf:value field.
+			fields := getChildren(inner)
+
+			// If there is an rdf:value field, then this is a property with
+			// general qualifiers.
 			valueIdx := -1
 			for i, f := range fields {
 				if f.name == nameRDFValue {
@@ -297,24 +277,20 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				}
 
 				f := fields[valueIdx]
-				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
-				if val == nil {
-					val = Text{V: ""}
-				}
-				return val
+				return parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
 			}
 
+			// Otherwise, this is a structure.
 			res := RawStruct{
 				Value: make(map[xml.Name]Raw, len(fields)),
 				Q:     qq,
 			}
 			for _, f := range fields {
-				if !isValidPropertyName(f.name) {
-					continue
-				}
-				val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
-				if val != nil {
-					res.Value[f.name] = val
+				if isValidPropertyName(f.name) {
+					val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
+					if val != nil {
+						res.Value[f.name] = val
+					}
 				}
 			}
 
@@ -322,11 +298,6 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 		}
 
 	case parseTypeResourcePropertyElt:
-		// A parseTypeResourcePropertyElt is a form of shorthand that replaces
-		// the inner nodeElement of a resourcePropertyElt with an
-		// rdf:parseType="Resource" attribute on the outer element. This form
-		// is commonly used in XMP as a cleaner way to represent a struct.
-		//
 		// See appendix C.2.9 (The parseTypeResourcePropertyElt) of ISO 16684-1:2011.
 
 		for _, a := range start.Attr {
@@ -335,45 +306,41 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			}
 		}
 
-		fields := getChildElements(tokens)
+		fields := getChildren(tokens)
 
-		// General qualifiers are distinguished from structure elements by the
-		// presence of an rdf:value field
-		isQualifierStruct := false
-		for _, f := range fields {
+		// If there is an rdf:value field, then this is a property with general
+		// qualifiers.
+		valueIdx := -1
+		for i, f := range fields {
 			if f.name == nameRDFValue {
-				isQualifierStruct = true
+				valueIdx = i
 				break
 			}
 		}
-		if isQualifierStruct {
-			var valueIndex int
-			for i, f := range fields {
-				if f.name == nameRDFValue {
-					valueIndex = i
-				} else if isValidQualifierName(f.name) {
+		if valueIdx >= 0 {
+			for _, f := range fields {
+				if isValidQualifierName(f.name) {
 					val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
 					if val != nil {
 						qq = append(qq, Qualifier{Name: f.name, Value: val})
 					}
 				}
 			}
-			f := fields[valueIndex]
+			f := fields[valueIdx]
 			return parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], qq)
 		}
 
-		// this is a structure element
+		// Otherwise this is a structure.
 		res := RawStruct{
-			Value: make(map[xml.Name]Raw),
+			Value: make(map[xml.Name]Raw, len(fields)),
 			Q:     qq,
 		}
 		for _, f := range fields {
-			if !isValidPropertyName(f.name) {
-				continue
-			}
-			val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
-			if val != nil {
-				res.Value[f.name] = val
+			if isValidPropertyName(f.name) {
+				val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
+				if val != nil {
+					res.Value[f.name] = val
+				}
 			}
 		}
 		return res
@@ -462,11 +429,9 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			return res
 		}
 
-	case parseTypeLiteralPropertyElt, parseTypeCollectionPropertyElt, parseTypeOtherPropertyElt:
-		return nil // not allowed in XMP
-
 	default:
-		panic("unreachable")
+		// All remaining cases are not allowed in XMP.
+		return nil
 	}
 }
 
@@ -536,7 +501,7 @@ type childElement struct {
 	start, end int
 }
 
-func getChildElements(tokens []xml.Token) []childElement {
+func getChildren(tokens []xml.Token) []childElement {
 	var children []childElement
 	level := 0
 	for i, t := range tokens {
@@ -557,7 +522,7 @@ func getChildElements(tokens []xml.Token) []childElement {
 }
 
 func isValidPropertyName(n xml.Name) bool {
-	if n.Space == "" || n.Space == xmlNamespace {
+	if n.Space == "" || n.Space == xmlNamespace || n.Space == "xmlns" {
 		return false
 	}
 	if !jvxml.IsName([]byte(n.Local)) || strings.Contains(n.Local, ":") {

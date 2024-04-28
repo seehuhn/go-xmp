@@ -62,7 +62,7 @@ func (p *Packet) SetValue(namespace, propertyName string, value Value) {
 	if !isValidPropertyName(name) {
 		panic("invalid property name")
 	}
-	p.Properties[name] = value.GetXMP()
+	p.Properties[name] = value.GetXMP(p)
 }
 
 // ClearValue removes the given property from the packet.
@@ -201,7 +201,7 @@ func (t Text) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (t Text) GetXMP() Raw {
+func (t Text) GetXMP(*Packet) Raw {
 	return t
 }
 
@@ -316,7 +316,7 @@ func (u URL) IsZero() bool {
 }
 
 // GetXMP implements the [Value] interface.
-func (u URL) GetXMP() Raw {
+func (u URL) GetXMP(*Packet) Raw {
 	return u
 }
 
@@ -655,16 +655,6 @@ const (
 	Ordered
 	Alternative
 )
-
-// A Value is a datatype which can be represented as XMP data.
-type Value interface {
-	IsZero() bool
-
-	// GetXMP returns the XMP representation of a value.
-	GetXMP() Raw
-
-	DecodeAnother(Raw) (Value, error)
-}
 
 // ErrInvalid is returned by [GetValue] when XMP data is present in the XML
 // file, but the data does not have the expected structure.

@@ -15,4 +15,8 @@
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 // Package xmp reads and writes Extensible Metadata Platform (XMP) data.
+//
+// The main type in this package is the [Packet] type, which represents an XMP
+// packet.  XMP packets can be read from file using the [Read] function and
+// written to file using the [Packet.Write] method.
 package xmp
