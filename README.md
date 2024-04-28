@@ -1,7 +1,7 @@
 Extensible Metadata Platform in Go
 ===================================
 
-[![Go Reference](https://pkg.go.dev/badge/seehuhn.de/gp/xmp.svg)](https://pkg.go.dev/seehuhn.de/gp/xmp)
+[![Go Reference](https://pkg.go.dev/badge/seehuhn.de/go/xmp.svg)](https://pkg.go.dev/seehuhn.de/go/xmp)
 
 This package provides a Go API for reading and writing XMP metadata files.
 It is written in pure Go and does not depend on any external libraries.
