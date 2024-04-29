@@ -81,10 +81,10 @@ type DublinCore struct {
 	Type UnorderedArray[Text] `xmp:"type"`
 }
 
-// XMP represents the XMP basic namespace.
+// Basic represents the XMP basic namespace.
 //
 // See section 8.4 of ISO 16684-1:2011 for details.
-type XMP struct {
+type Basic struct {
 	_ Namespace `xmp:"http://ns.adobe.com/xap/1.0/"`
 	_ Prefix    `xmp:"xmp"`
 

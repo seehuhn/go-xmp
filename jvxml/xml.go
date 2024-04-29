@@ -2,7 +2,12 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Package jvxml implements an alternative encoder for XML data
+// Package jvxml implements an alternative encoder for XML data.
+//
+// There are two differences between this package and the corresponding code in
+// the standard library's encoding/xml package.  First, this package implements
+// an additional [EmptyElement] type to represent empty XML elements.  Second,
+// this package exports the [IsName] function.
 package jvxml
 
 // References:

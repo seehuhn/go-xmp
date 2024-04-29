@@ -29,7 +29,10 @@ import (
 
 // Packet represents an XMP packet.
 type Packet struct {
-	// Properties maps namespaces to models.
+	// Properties represents the properties stored in the XMP packet.
+	// The key consists of the namespace and the property name,
+	// the value is the low-level representation of the property.
+	// Use the GetValue function to access values with known types.
 	Properties map[xml.Name]Raw
 
 	// About (optional) is the URL of the resource described by the XMP packet.
@@ -38,7 +41,7 @@ type Packet struct {
 	nsToPrefix map[string]string
 }
 
-// NewPacket allocates a new XMP packet.
+// NewPacket allocates a new, empty XMP packet.
 func NewPacket() *Packet {
 	return &Packet{
 		Properties: make(map[xml.Name]Raw),
@@ -62,7 +65,7 @@ func (p *Packet) SetValue(namespace, propertyName string, value Value) {
 	if !isValidPropertyName(name) {
 		panic("invalid property name")
 	}
-	p.Properties[name] = value.GetXMP(p)
+	p.Properties[name] = value.EncodeXMP(p)
 }
 
 // ClearValue removes the given property from the packet.
@@ -73,8 +76,11 @@ func (p *Packet) ClearValue(namespace, propertyName string) {
 
 // GetValue retrieves the value of the given property from the packet.
 //
-// In case the value is not found, [ErrNotFound] is returned.
-// If the value exists but has the wrong format, [ErrInvalid] is returned.
+// In case the value is not found, [ErrNotFound] is returned. If the value
+// exists but has the wrong format, [ErrInvalid] is returned.
+//
+// Note: This should be a method of the [Packet] type, but at the moment Go
+// does not allow methods with type parameters.
 func GetValue[E Value](p *Packet, namespace, propertyName string) (E, error) {
 	var zero E
 	name := xml.Name{Space: namespace, Local: propertyName}
@@ -89,7 +95,10 @@ func GetValue[E Value](p *Packet, namespace, propertyName string) (E, error) {
 	return u.(E), nil
 }
 
-// Raw is one of [Text], [URL], [RawStruct], or [RawArray].
+// Raw is one of [Text], [URL], [RawStruct], or [RawArray].  These are the
+// types which can be used to represent XMP values inside the XLS
+// representation of an XMP packet.  The methods of the [Value] interface
+// allow to convert a value to and from a [Raw] value.
 type Raw interface {
 	getNamespaces(m map[string]struct{})
 	appendXML(tokens []xml.Token, name xml.Name) []xml.Token
@@ -110,7 +119,7 @@ func Language(l language.Tag) Qualifier {
 	}
 }
 
-// Q represents a list of qualifiers.
+// Q represents the qualifiers of an XMP value.
 type Q []Qualifier
 
 // StripLanguage returns the language qualifier of a [Q] and
@@ -200,8 +209,8 @@ func (t Text) IsZero() bool {
 	return t.V == "" && len(t.Q) == 0
 }
 
-// GetXMP implements the [Value] interface.
-func (t Text) GetXMP(*Packet) Raw {
+// EncodeXMP implements the [Value] interface.
+func (t Text) EncodeXMP(*Packet) Raw {
 	return t
 }
 
@@ -293,7 +302,7 @@ func (t Text) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	return tokens
 }
 
-// URL is a simple URL (or URI) value.
+// URL is a URL or URI.
 //
 // URL implements both the [Value] and [Raw] interfaces.
 type URL struct {
@@ -315,8 +324,8 @@ func (u URL) IsZero() bool {
 	return u.V == nil && len(u.Q) == 0
 }
 
-// GetXMP implements the [Value] interface.
-func (u URL) GetXMP(*Packet) Raw {
+// EncodeXMP implements the [Value] interface.
+func (u URL) EncodeXMP(*Packet) Raw {
 	return u
 }
 
