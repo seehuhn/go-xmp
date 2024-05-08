@@ -557,6 +557,31 @@ var decodeTestCases = []decodeTestCase{
 			},
 		},
 	},
+	{
+		desc: "typed node for a property with general qualifiers",
+		in: `<rdf:Description rdf:about="">
+			<test:prop>
+			<test:Type>
+				<rdf:value>1</rdf:value>
+				<test:q>q</test:q>
+			</test:Type>
+			</test:prop>
+		</rdf:Description>`,
+		out: &Packet{
+			Properties: map[xml.Name]Raw{
+				elemTest: Text{
+					V: "1",
+					Q: Q{
+						{
+							Name:  nameRDFType,
+							Value: URL{V: &url.URL{Scheme: "http", Host: "ns.seehuhn.de", Path: "/test/", Fragment: "Type"}},
+						},
+						{elemTestQ, Text{V: "q"}},
+					},
+				},
+			},
+		},
+	},
 
 	{
 		desc: "strange namespace prefix",
