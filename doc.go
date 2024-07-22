@@ -27,7 +27,7 @@
 // An XMP packet stores a set of properties.  Each property is identified by a
 // namespace and a name.  The value of a property has type which implements
 // [Value], the specific type depends on the property namespace and name.  Use
-// [GetValue] to read a property from an XMP packet and [Packet.Set] to set a
+// [PacketGetValue] to read a property from an XMP packet and [Packet.Set] to set a
 // property in an XMP packet.
 //
 // The package provides the following types for XMP values:

@@ -33,7 +33,7 @@ func TestText(t *testing.T) {
 	}
 	p.SetValue("http://ns.seehuhn.de/test/#", "prop", A)
 
-	B, err := GetValue[Text](p, "http://ns.seehuhn.de/test/#", "prop")
+	B, err := PacketGetValue[Text](p, "http://ns.seehuhn.de/test/#", "prop")
 	if err != nil {
 		t.Fatalf("p.Get: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestUnorderedArray(t *testing.T) {
 	}
 	p.SetValue("http://ns.seehuhn.de/test/#", "prop", A)
 
-	B, err := GetValue[UnorderedArray[Text]](p, "http://ns.seehuhn.de/test/#", "prop")
+	B, err := PacketGetValue[UnorderedArray[Text]](p, "http://ns.seehuhn.de/test/#", "prop")
 	if err != nil {
 		t.Fatalf("p.Get: %v", err)
 	}

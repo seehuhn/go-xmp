@@ -74,14 +74,14 @@ func (p *Packet) ClearValue(namespace, propertyName string) {
 	delete(p.Properties, name)
 }
 
-// GetValue retrieves the value of the given property from the packet.
+// PacketGetValue retrieves the value of the given property from the packet.
 //
 // In case the value is not found, [ErrNotFound] is returned. If the value
 // exists but has the wrong format, [ErrInvalid] is returned.
 //
-// Note: This should be a method of the [Packet] type, but at the moment Go
-// does not allow methods with type parameters.
-func GetValue[E Value](p *Packet, namespace, propertyName string) (E, error) {
+// Once Go supports methods with type parameters, this function can be turned
+// into a method on [Packet].
+func PacketGetValue[E Value](p *Packet, namespace, propertyName string) (E, error) {
 	var zero E
 	name := xml.Name{Space: namespace, Local: propertyName}
 	xmpData, ok := p.Properties[name]
@@ -665,10 +665,10 @@ const (
 	Alternative
 )
 
-// ErrInvalid is returned by [GetValue] when XMP data is present in the XML
+// ErrInvalid is returned by [PacketGetValue] when XMP data is present in the XML
 // file, but the data does not have the expected structure.
 var ErrInvalid = errors.New("invalid XMP data")
 
-// ErrNotFound is returned by [GetValue] when a requested property is not
+// ErrNotFound is returned by [PacketGetValue] when a requested property is not
 // present in the packet.
 var ErrNotFound = errors.New("property not found")
