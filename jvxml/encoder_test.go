@@ -19,7 +19,7 @@ func TestMarshalFlush(t *testing.T) {
 		t.Fatalf("enc.EncodeToken: %v", err)
 	}
 	if buf.Len() > 0 {
-		t.Fatalf("enc.EncodeToken caused actual write: %q", buf.String())
+		t.Fatalf("enc.EncodeToken caused write: %q", buf.String())
 	}
 	if err := enc.Flush(); err != nil {
 		t.Fatalf("enc.Flush: %v", err)
