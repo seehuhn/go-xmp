@@ -1,6 +1,8 @@
 module seehuhn.de/go/xmp
 
-go 1.22.2
+go 1.23.2
+
+toolchain go1.23.4
 
 require (
 	github.com/google/go-cmp v0.6.0
