@@ -302,6 +302,11 @@ func (t Text) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	return tokens
 }
 
+// Equal reports whether t and other represent the same Text value.
+func (t Text) Equal(other Text) bool {
+	return t.V == other.V && qualifiersEqual(t.Q, other.Q)
+}
+
 // URL is a URL or URI.
 //
 // URL implements both the [Value] and [Raw] interfaces.
@@ -402,6 +407,11 @@ func (u URL) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	}
 
 	return tokens
+}
+
+// Equal reports whether u and other represent the same URL value.
+func (u URL) Equal(other URL) bool {
+	return urlsEqual(u.V, other.V) && qualifiersEqual(u.Q, other.Q)
 }
 
 // RawStruct is an XMP structure.
@@ -539,6 +549,29 @@ func (s *RawStruct) allSimple() bool {
 	return true
 }
 
+// Equal reports whether s and other represent the same RawStruct value.
+func (s RawStruct) Equal(other RawStruct) bool {
+	if !qualifiersEqual(s.Q, other.Q) {
+		return false
+	}
+
+	if len(s.Value) != len(other.Value) {
+		return false
+	}
+
+	for name, raw := range s.Value {
+		otherRaw, exists := other.Value[name]
+		if !exists {
+			return false
+		}
+		if !rawEqual(raw, otherRaw) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // RawArray is an XMP array.
 // This can be an unordered array, an ordered array, or an alternative array,
 // depending on the value of the Type field.
@@ -654,6 +687,29 @@ func (a RawArray) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 	return tokens
 }
 
+// Equal reports whether a and other represent the same RawArray value.
+func (a RawArray) Equal(other RawArray) bool {
+	if !qualifiersEqual(a.Q, other.Q) {
+		return false
+	}
+
+	if a.Kind != other.Kind {
+		return false
+	}
+
+	if len(a.Value) != len(other.Value) {
+		return false
+	}
+
+	for i, raw := range a.Value {
+		if !rawEqual(raw, other.Value[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // RawArrayType represents the type of an XMP array (unordered, ordered, or
 // alternative).
 type RawArrayType int
@@ -672,3 +728,93 @@ var ErrInvalid = errors.New("invalid XMP data")
 // ErrNotFound is returned by [PacketGetValue] when a requested property is not
 // present in the packet.
 var ErrNotFound = errors.New("property not found")
+
+// Equal reports whether p and other represent the same XMP packet.
+func (p *Packet) Equal(other *Packet) bool {
+	if p == nil || other == nil {
+		return p == other
+	}
+
+	// compare About URLs
+	if !urlsEqual(p.About, other.About) {
+		return false
+	}
+
+	// compare Properties maps
+	if len(p.Properties) != len(other.Properties) {
+		return false
+	}
+	for name, raw := range p.Properties {
+		otherRaw, exists := other.Properties[name]
+		if !exists {
+			return false
+		}
+		if !rawEqual(raw, otherRaw) {
+			return false
+		}
+	}
+
+	// nsToPrefix is not compared as per plan
+	return true
+}
+
+// urlsEqual compares two url.URL pointers for equality.
+func urlsEqual(a, b *url.URL) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return a.String() == b.String()
+}
+
+// rawEqual compares two Raw values for equality.
+func rawEqual(a, b Raw) bool {
+	switch va := a.(type) {
+	case Text:
+		if vb, ok := b.(Text); ok {
+			return va.Equal(vb)
+		}
+	case URL:
+		if vb, ok := b.(URL); ok {
+			return va.Equal(vb)
+		}
+	case RawStruct:
+		if vb, ok := b.(RawStruct); ok {
+			return va.Equal(vb)
+		}
+	case RawArray:
+		if vb, ok := b.(RawArray); ok {
+			return va.Equal(vb)
+		}
+	}
+	return false
+}
+
+// qualifiersEqual compares two qualifier slices for equality.
+func qualifiersEqual(a, b Q) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	// create maps for comparison since order doesn't matter for qualifiers
+	mapA := make(map[xml.Name]Raw, len(a))
+	mapB := make(map[xml.Name]Raw, len(b))
+
+	for _, q := range a {
+		mapA[q.Name] = q.Value
+	}
+	for _, q := range b {
+		mapB[q.Name] = q.Value
+	}
+
+	for name, rawA := range mapA {
+		rawB, exists := mapB[name]
+		if !exists {
+			return false
+		}
+		if !rawEqual(rawA, rawB) {
+			return false
+		}
+	}
+
+	return true
+}
