@@ -134,13 +134,13 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			}
 		}
 
-		var text string
+		var text strings.Builder
 		for _, t := range tokens {
 			if c, ok := t.(xml.CharData); ok {
-				text += string(c)
+				text.WriteString(string(c))
 			}
 		}
-		return Text{V: text, Q: qq}
+		return Text{V: text.String(), Q: qq}
 
 	case resourcePropertyElt:
 		// See appendix C.2.6 of ISO 16684-1:2011.
