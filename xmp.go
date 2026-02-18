@@ -17,12 +17,13 @@
 package xmp
 
 import (
+	"cmp"
 	"encoding/xml"
 	"errors"
+	"maps"
 	"net/url"
-	"sort"
+	"slices"
 
-	"golang.org/x/exp/maps"
 	"golang.org/x/text/language"
 	"seehuhn.de/go/xmp/jvxml"
 )
@@ -528,12 +529,9 @@ func (s RawStruct) appendXML(tokens []xml.Token, name xml.Name) []xml.Token {
 
 // fieldNames returns the field names sorted by namespace and local name.
 func (s *RawStruct) fieldNames() []xml.Name {
-	fieldNames := maps.Keys(s.Value)
-	sort.Slice(fieldNames, func(i, j int) bool {
-		if fieldNames[i].Space != fieldNames[j].Space {
-			return fieldNames[i].Space < fieldNames[j].Space
-		}
-		return fieldNames[i].Local < fieldNames[j].Local
+	fieldNames := slices.Collect(maps.Keys(s.Value))
+	slices.SortFunc(fieldNames, func(a, b xml.Name) int {
+		return cmp.Or(cmp.Compare(a.Space, b.Space), cmp.Compare(a.Local, b.Local))
 	})
 	return fieldNames
 }

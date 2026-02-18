@@ -17,11 +17,12 @@
 package xmp
 
 import (
+	"cmp"
 	"encoding/xml"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 
-	"golang.org/x/exp/maps"
 	"seehuhn.de/go/xmp/jvxml"
 )
 
@@ -38,12 +39,9 @@ func (p *Packet) Write(w io.Writer, opt *PacketOptions) error {
 		return err
 	}
 
-	names := maps.Keys(p.Properties)
-	sort.Slice(names, func(i, j int) bool {
-		if names[i].Space != names[j].Space {
-			return names[i].Space < names[j].Space
-		}
-		return names[i].Local < names[j].Local
+	names := slices.Collect(maps.Keys(p.Properties))
+	slices.SortFunc(names, func(a, b xml.Name) int {
+		return cmp.Or(cmp.Compare(a.Space, b.Space), cmp.Compare(a.Local, b.Local))
 	})
 
 	for _, name := range names {
@@ -109,8 +107,7 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 		nsUsed[key.Space] = struct{}{}
 		value.getNamespaces(nsUsed)
 	}
-	nsList := maps.Keys(nsUsed)
-	sort.Strings(nsList)
+	nsList := slices.Sorted(maps.Keys(nsUsed))
 
 	// Fix the namespace prefixes.
 	nsToPrefix := make(map[string]string)
@@ -170,8 +167,7 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 	}
 
 	var attrs []xml.Attr
-	namespaces := maps.Keys(e.nsToPrefix)
-	sort.Strings(namespaces)
+	namespaces := slices.Sorted(maps.Keys(e.nsToPrefix))
 	for _, ns := range namespaces {
 		if ns == xmlNamespace {
 			continue
