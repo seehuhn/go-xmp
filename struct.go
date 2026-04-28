@@ -147,6 +147,30 @@ type RightsManagement struct {
 	WebStatement Text
 }
 
+// PDF represents the Adobe PDF namespace, which carries PDF-specific
+// metadata that does not have a natural home in the core XMP schemas.
+//
+// See https://developer.adobe.com/xmp/docs/XMPNamespaces/pdf/ for details.
+type PDF struct {
+	_ Namespace `xmp:"http://ns.adobe.com/pdf/1.3/"`
+	_ Prefix    `xmp:"pdf"`
+
+	// Keywords is a list of keywords describing the document, as a single
+	// free-form string.  XMP does not specify how the individual keywords
+	// are separated.
+	Keywords Text
+
+	// PDFVersion is the PDF file version (e.g. "1.7", "2.0").
+	PDFVersion Text
+
+	// Producer is the name of the tool that produced the PDF document.
+	Producer AgentName
+
+	// Trapped indicates whether the document has been trapped.
+	// Allowed values are "True", "False", and "Unknown".
+	Trapped Text
+}
+
 // MediaManagement represents the XMP Media Management namespace.
 //
 // See section 8.6 of ISO 16684-1:2011 for details.
@@ -177,8 +201,8 @@ type MediaManagement struct {
 
 // Set stores the property values from one or more XMP namespace structs in
 // the packet.  Predefined namespace structs include [DublinCore], [Basic],
-// [RightsManagement], and [MediaManagement]; see [Namespace] for how to
-// define your own.
+// [RightsManagement], [PDF], and [MediaManagement]; see [Namespace] for how
+// to define your own.
 //
 // Each argument must be a (pointer to a) namespace struct.  Set returns an
 // error if an argument has the wrong shape, e.g. is not a struct or lacks a
@@ -241,8 +265,8 @@ func (p *Packet) setOne(v any) error {
 
 // Get fills the fields of an XMP namespace struct with property values from
 // the packet.  Predefined namespace structs include [DublinCore], [Basic],
-// [RightsManagement], and [MediaManagement]; see [Namespace] for how to
-// define your own.
+// [RightsManagement], [PDF], and [MediaManagement]; see [Namespace] for how
+// to define your own.
 //
 // The argument dst must be a non-nil pointer to such a struct, otherwise
 // Get panics.  Properties not present in the packet are set to the zero

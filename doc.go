@@ -67,6 +67,7 @@
 //   - [MediaManagement] represents the XMP Media Management namespace.
 //   - [RightsManagement] represents the XMP Rights Management namespace.
 //   - [Basic] represents the XMP basic namespace.
+//   - [PDF] represents the Adobe PDF namespace.
 //
 // Additional models can be defined as Go structs.  A model struct must
 // include a field of type [Namespace] whose `xmp:"..."` tag gives the

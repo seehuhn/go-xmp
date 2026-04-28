@@ -99,6 +99,18 @@ func TestRoundTripRightsManagement(t *testing.T) {
 	roundTrip(t, in, out)
 }
 
+func TestRoundTripPDF(t *testing.T) {
+	in := &PDF{
+		Keywords:   NewText("xmp, pdf, metadata"),
+		PDFVersion: NewText("2.0"),
+		Producer:   NewAgentName("seehuhn.de/go/xmp test"),
+		Trapped:    NewText("False"),
+	}
+
+	out := &PDF{}
+	roundTrip(t, in, out)
+}
+
 func TestRoundTripMediaManagement(t *testing.T) {
 	in := &MediaManagement{
 		DerivedFrom: ResourceRef{
