@@ -27,14 +27,14 @@
 // An XMP packet stores a set of properties.  Each property is identified by a
 // namespace and a name.  The value of a property has type which implements
 // [Value], the specific type depends on the property namespace and name.  Use
-// [PacketGetValue] to read a property from an XMP packet and [Packet.Set] to set a
-// property in an XMP packet.
+// [PacketGetValue] to read a property from an XMP packet and
+// [Packet.SetValue] to set a property in an XMP packet.
 //
 // The package provides the following types for XMP values:
 //
 //   - [Text] represents a generic text string.
 //   - [AgentName] represents the name of some document creator software.
-//   - [AlternativeArray] is an ordered array of values.
+//   - [AlternativeArray] is an array of alternative renditions of one value.
 //   - [Date] represents a date and time.
 //   - [GUID] represents a globally unique identifier.
 //   - [Locale] represents a language code.
@@ -65,11 +65,14 @@
 //
 //   - [DublinCore] represents the Dublin Core namespace.
 //   - [MediaManagement] represents the XMP Media Management namespace.
-//   - [RightsManagement] represents the XMP RightsManagement Management namespace.
+//   - [RightsManagement] represents the XMP Rights Management namespace.
 //   - [Basic] represents the XMP basic namespace.
 //
-// Additional models can be defined by defining a struct with fields of type
-// [Value] and using the Go struct tags to specify the XMP property name where
-// this is different from the field name.  See [DublinCore], [Namespace] and
-// [Prefix] for examples.
+// Additional models can be defined as Go structs.  A model struct must
+// include a field of type [Namespace] whose `xmp:"..."` tag gives the
+// namespace URI; the remaining exported fields, of types implementing
+// [Value], correspond to properties in that namespace.  An optional
+// [Prefix] field declares a preferred XML prefix.  By default the field
+// name is used as the property name; this can be overridden with an
+// `xmp:"..."` tag on the field.  See [DublinCore] for a worked example.
 package xmp

@@ -19,7 +19,6 @@ package xmp
 import (
 	"encoding/xml"
 	"errors"
-	"fmt"
 	"reflect"
 )
 
@@ -118,7 +117,7 @@ type Basic struct {
 	Rating Real
 }
 
-// RightsManagement represents the XMP RightsManagement Management namespace.
+// RightsManagement represents the XMP Rights Management namespace.
 //
 // See section 8.5 of ISO 16684-1:2011 for details.
 type RightsManagement struct {
@@ -170,13 +169,20 @@ type MediaManagement struct {
 	OriginalDocumentID Text
 
 	// RenditionClass is a rendition class name for this resource.
-	RenditionClass Text
+	RenditionClass RenditionClass
 
 	// RenditionParams can be used to provide additional rendition parameters
 	RenditionParams Text
 }
 
-// Set sets XMP properties from the fields of a namespace struct.
+// Set stores the property values from one or more XMP namespace structs in
+// the packet.  Predefined namespace structs include [DublinCore], [Basic],
+// [RightsManagement], and [MediaManagement]; see [Namespace] for how to
+// define your own.
+//
+// Each argument must be a (pointer to a) namespace struct.  Set returns an
+// error if an argument has the wrong shape, e.g. is not a struct or lacks a
+// [Namespace] field.
 func (p *Packet) Set(models ...any) error {
 	for _, v := range models {
 		if err := p.setOne(v); err != nil {
@@ -214,20 +220,14 @@ func (p *Packet) setOne(v any) error {
 		fVal := s.Field(i)
 		fInfo := st.Field(i)
 
-		if fVal.Type() == nsTagType || fVal.Type() == prefixTagType {
+		if !fVal.CanInterface() || !fVal.Type().Implements(typeType) {
 			continue
 		}
-
-		var val Value
-		if fVal.CanInterface() && fVal.Type().Implements(typeType) {
-			val = fVal.Interface().(Value)
-		}
+		val := fVal.Interface().(Value)
 
 		propertyName := fInfo.Tag.Get("xmp")
 		if propertyName == "" {
 			propertyName = fInfo.Name
-		} else if val == nil {
-			return fmt.Errorf("field %s does not implement Type", fInfo.Name)
 		}
 		if !val.IsZero() {
 			p.SetValue(namespace, propertyName, val)
@@ -239,10 +239,14 @@ func (p *Packet) setOne(v any) error {
 	return nil
 }
 
-// Get fills the fields in a namespace struct using data from the packet.
+// Get fills the fields of an XMP namespace struct with property values from
+// the packet.  Predefined namespace structs include [DublinCore], [Basic],
+// [RightsManagement], and [MediaManagement]; see [Namespace] for how to
+// define your own.
 //
-// The argument dst must be a pointer to an XMP namespace struct or the
-// function will panic.
+// The argument dst must be a non-nil pointer to such a struct, otherwise
+// Get panics.  Properties not present in the packet are set to the zero
+// value of their field type.
 func (p *Packet) Get(dst any) {
 	s := reflect.Indirect(reflect.ValueOf(dst))
 	st := s.Type()

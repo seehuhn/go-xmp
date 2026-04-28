@@ -19,6 +19,8 @@ package xmp
 import (
 	"cmp"
 	"encoding/xml"
+	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"slices"
@@ -29,8 +31,26 @@ import (
 // PacketOptions can be used to control the output format of the [Packet.Write]
 // method.
 type PacketOptions struct {
+	// Pretty controls whether the encoded XMP is indented for readability.
 	Pretty bool
+
+	// PadToLength controls trailing whitespace padding inside the XMP packet
+	// wrapper.
+	//
+	// If zero, no padding is added and the trailer reads
+	// <?xpacket end="r"?>, signalling that the packet is read-only.
+	//
+	// If positive, padding is added so that the encoded packet has exactly
+	// the requested length in bytes, and the trailer reads
+	// <?xpacket end="w"?>, signalling that the packet may be edited in
+	// place inside its host file. [Packet.Write] returns an error if the
+	// encoded packet does not fit in PadToLength bytes.
+	PadToLength int
 }
+
+// ErrPacketTooLong is returned by [Packet.Write] when the encoded packet
+// does not fit into the requested [PacketOptions.PadToLength].
+var ErrPacketTooLong = errors.New("xmp: encoded packet exceeds PadToLength")
 
 // Write writes the XMP packet to the given writer.
 func (p *Packet) Write(w io.Writer, opt *PacketOptions) error {
@@ -91,10 +111,23 @@ func (e *encoder) fixToken(t jvxml.Token) jvxml.Token {
 
 // An encoder writes XMP data to an output stream.
 type encoder struct {
-	w io.Writer
+	w *countingWriter
 	*jvxml.Encoder
 	nsToPrefix map[string]string
 	prefixToNS map[string]string
+	padTo      int
+}
+
+// countingWriter wraps an [io.Writer] and counts the bytes written.
+type countingWriter struct {
+	w io.Writer
+	n int
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += n
+	return n, err
 }
 
 // newEncoder returns a new encoder that writes to w.
@@ -142,15 +175,19 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 		prefixToNS[pfx] = ns
 	}
 
-	enc := jvxml.NewEncoder(w)
+	cw := &countingWriter{w: w}
+	enc := jvxml.NewEncoder(cw)
 	if opt != nil && opt.Pretty {
 		enc.Indent("", "\t")
 	}
 	e := &encoder{
-		w:          w,
+		w:          cw,
 		Encoder:    enc,
 		nsToPrefix: nsToPrefix,
 		prefixToNS: prefixToNS,
+	}
+	if opt != nil {
+		e.padTo = opt.PadToLength
 	}
 
 	err := e.EncodeToken(xml.ProcInst{
@@ -222,17 +259,62 @@ func (e *encoder) Close() error {
 		return err
 	}
 
-	err = e.EncodeToken(xml.ProcInst{
-		Target: "xpacket",
-		Inst:   []byte("end=\"w\""),
-	})
+	// flush the XML encoder so e.w.n reflects the bytes written so far
+	err = e.Encoder.Flush()
 	if err != nil {
 		return err
 	}
 
-	err = e.Encoder.Close()
-	if err != nil {
+	// write the trailer (with optional padding) directly so we can
+	// match the requested packet length exactly
+	var trailer []byte
+	if e.padTo > 0 {
+		trailer = []byte(`<?xpacket end="w"?>`)
+		remaining := e.padTo - e.w.n - len(trailer)
+		if remaining < 0 {
+			total := e.w.n + len(trailer)
+			return fmt.Errorf("%w: %d bytes needed, limit %d", ErrPacketTooLong, total, e.padTo)
+		}
+		if err := writePadding(e.w, remaining); err != nil {
+			return err
+		}
+	} else {
+		trailer = []byte(`<?xpacket end="r"?>`)
+	}
+	if _, err := e.w.Write(trailer); err != nil {
 		return err
+	}
+	return nil
+}
+
+// writePadding writes n bytes of ASCII whitespace, formatted as lines of
+// up to 80 characters separated by newlines.
+func writePadding(w io.Writer, n int) error {
+	if n <= 0 {
+		return nil
+	}
+	const lineLen = 80
+	var line [lineLen]byte
+	for i := range line {
+		line[i] = ' '
+	}
+	line[lineLen-1] = '\n'
+
+	for n >= lineLen {
+		if _, err := w.Write(line[:]); err != nil {
+			return err
+		}
+		n -= lineLen
+	}
+	if n > 0 {
+		var tail [lineLen]byte
+		for i := range tail {
+			tail[i] = ' '
+		}
+		tail[n-1] = '\n'
+		if _, err := w.Write(tail[:n]); err != nil {
+			return err
+		}
 	}
 	return nil
 }

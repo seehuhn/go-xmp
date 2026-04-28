@@ -19,6 +19,7 @@ package xmp
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"net/url"
 	"regexp"
 	"strings"
@@ -308,5 +309,76 @@ func TestRoundTrip(t *testing.T) {
 				t.Fatalf("RoundTrip mismatch (-want +got):\n%s", d)
 			}
 		})
+	}
+}
+
+func TestPacketTrailerReadOnly(t *testing.T) {
+	p := &Packet{
+		Properties: map[xml.Name]Raw{
+			elemTest: Text{V: "hello"},
+		},
+	}
+	buf := &bytes.Buffer{}
+	if err := p.Write(buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `<?xpacket end="r"?>`) {
+		t.Errorf("missing read-only trailer; got:\n%s", body)
+	}
+	if strings.Contains(body, `end="w"`) {
+		t.Errorf("unexpected writable trailer; got:\n%s", body)
+	}
+}
+
+func TestPacketPadToLength(t *testing.T) {
+	p := &Packet{
+		Properties: map[xml.Name]Raw{
+			elemTest: Text{V: "hello"},
+		},
+	}
+
+	// minimal length: write once with no padding to discover the size
+	base := &bytes.Buffer{}
+	if err := p.Write(base, nil); err != nil {
+		t.Fatal(err)
+	}
+	// the read-only trailer is the same length as the writable one
+	minLen := base.Len()
+
+	for _, target := range []int{minLen, minLen + 1, minLen + 100, minLen + 4096} {
+		buf := &bytes.Buffer{}
+		err := p.Write(buf, &PacketOptions{PadToLength: target})
+		if err != nil {
+			t.Fatalf("PadToLength=%d: unexpected error: %v", target, err)
+		}
+		if buf.Len() != target {
+			t.Errorf("PadToLength=%d: got %d bytes", target, buf.Len())
+		}
+		body := buf.String()
+		if !strings.HasSuffix(body, `<?xpacket end="w"?>`) {
+			t.Errorf("PadToLength=%d: missing writable trailer", target)
+		}
+
+		// padding must be ASCII whitespace and packet must round-trip
+		out, err := Read(strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("PadToLength=%d: round-trip read failed: %v", target, err)
+		}
+		if d := cmp.Diff(p, out, cmp.AllowUnexported(Packet{})); d != "" {
+			t.Errorf("PadToLength=%d: round-trip mismatch (-want +got):\n%s", target, d)
+		}
+	}
+}
+
+func TestPacketPadToLengthTooSmall(t *testing.T) {
+	p := &Packet{
+		Properties: map[xml.Name]Raw{
+			elemTest: Text{V: "hello"},
+		},
+	}
+	err := p.Write(&bytes.Buffer{}, &PacketOptions{PadToLength: 10})
+	if !errors.Is(err, ErrPacketTooLong) {
+		t.Errorf("got %v, want ErrPacketTooLong", err)
 	}
 }

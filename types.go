@@ -34,7 +34,7 @@ type Value interface {
 	// if the value has no qualifiers.
 	IsZero() bool
 
-	// EncodeXMP returns the low-lecel XMP representation of a value.
+	// EncodeXMP returns the low-level XMP representation of a value.
 	EncodeXMP(*Packet) Raw
 
 	// DecodeAnother converts a low-level XMP representation into a [Value].
@@ -388,6 +388,9 @@ func (m MimeType) DecodeAnother(val Raw) (Value, error) {
 	if err != nil {
 		return nil, ErrInvalid
 	}
+	if len(param) == 0 {
+		param = nil
+	}
 	return MimeType{
 		V:     mt,
 		Param: param,
@@ -582,8 +585,10 @@ func (OrderedArray[E]) DecodeAnother(val Raw) (Value, error) {
 	return res, nil
 }
 
-// AlternativeArray is an ordered array of values.
-// All values in the array have the same type E.
+// AlternativeArray is an array of alternative values for a single property.
+// All values in the array have the same type E, and represent equivalent
+// renditions of the same logical value.  The order of the entries is not
+// significant, except that the first entry is the default rendition.
 type AlternativeArray[E Value] struct {
 	V []E
 	Q
@@ -724,6 +729,10 @@ func (Localized) DecodeAnother(val Raw) (Value, error) {
 }
 
 // ResourceRef represents a reference to an external resource.
+//
+// This corresponds to the XMP "ResourceRef" structured type defined in
+// section 8.6 of ISO 16684-1:2011, in the namespace
+// http://ns.adobe.com/xap/1.0/sType/ResourceRef#.
 type ResourceRef struct {
 	// DocumentID is the document ID of the referenced resource,
 	// as found in the xmpMM:DocumentID field.
@@ -736,38 +745,96 @@ type ResourceRef struct {
 	// as found in the xmpMM:InstanceID field.
 	InstanceID GUID
 
+	// RenditionClass is the rendition class of the referenced resource.
 	RenditionClass RenditionClass
 
+	// RenditionParams provides additional rendition parameters that are too
+	// complex or volatile to encode in [RenditionClass].
 	RenditionParams Text
 
 	Q
 }
 
+const resourceRefNamespace = "http://ns.adobe.com/xap/1.0/sType/ResourceRef#"
+
 // IsZero implements the [Value] interface.
-func (r *ResourceRef) IsZero() bool {
-	return r == nil
+func (r ResourceRef) IsZero() bool {
+	return r.DocumentID.IsZero() &&
+		r.FilePath.IsZero() &&
+		r.InstanceID.IsZero() &&
+		r.RenditionClass.IsZero() &&
+		r.RenditionParams.IsZero() &&
+		len(r.Q) == 0
 }
 
-// GetXMP implements the [Value] interface.
-func (r *ResourceRef) GetXMP(p *Packet) Raw {
-	ns := "http://ns.adobe.com/xap/1.0/sType/ResourceRef#"
-	p.RegisterPrefix(ns, "stRef")
-	res := &RawStruct{}
+// EncodeXMP implements the [Value] interface.
+func (r ResourceRef) EncodeXMP(p *Packet) Raw {
+	p.RegisterPrefix(resourceRefNamespace, "stRef")
+	res := RawStruct{
+		Value: map[xml.Name]Raw{},
+		Q:     r.Q,
+	}
 	if !r.DocumentID.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "documentID"}] = r.DocumentID.EncodeXMP(p)
+		res.Value[xml.Name{Space: resourceRefNamespace, Local: "documentID"}] = r.DocumentID.EncodeXMP(p)
 	}
 	if !r.FilePath.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "filePath"}] = r.FilePath.EncodeXMP(p)
+		res.Value[xml.Name{Space: resourceRefNamespace, Local: "filePath"}] = r.FilePath.EncodeXMP(p)
 	}
 	if !r.InstanceID.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "instanceID"}] = r.InstanceID.EncodeXMP(p)
+		res.Value[xml.Name{Space: resourceRefNamespace, Local: "instanceID"}] = r.InstanceID.EncodeXMP(p)
 	}
 	if !r.RenditionClass.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "renditionClass"}] = r.RenditionClass.EncodeXMP(p)
+		res.Value[xml.Name{Space: resourceRefNamespace, Local: "renditionClass"}] = r.RenditionClass.EncodeXMP(p)
 	}
 	if !r.RenditionParams.IsZero() {
-		res.Value[xml.Name{Space: ns, Local: "renditionParams"}] = r.RenditionParams.EncodeXMP(p)
+		res.Value[xml.Name{Space: resourceRefNamespace, Local: "renditionParams"}] = r.RenditionParams.EncodeXMP(p)
 	}
-
 	return res
+}
+
+// DecodeAnother implements the [Value] interface.
+func (ResourceRef) DecodeAnother(val Raw) (Value, error) {
+	s, ok := val.(RawStruct)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	res := ResourceRef{Q: s.Q}
+	for name, v := range s.Value {
+		if name.Space != resourceRefNamespace {
+			continue
+		}
+		switch name.Local {
+		case "documentID":
+			x, err := GUID{}.DecodeAnother(v)
+			if err != nil {
+				return nil, err
+			}
+			res.DocumentID = x.(GUID)
+		case "filePath":
+			x, err := URL{}.DecodeAnother(v)
+			if err != nil {
+				return nil, err
+			}
+			res.FilePath = x.(URL)
+		case "instanceID":
+			x, err := GUID{}.DecodeAnother(v)
+			if err != nil {
+				return nil, err
+			}
+			res.InstanceID = x.(GUID)
+		case "renditionClass":
+			x, err := RenditionClass{}.DecodeAnother(v)
+			if err != nil {
+				return nil, err
+			}
+			res.RenditionClass = x.(RenditionClass)
+		case "renditionParams":
+			x, err := Text{}.DecodeAnother(v)
+			if err != nil {
+				return nil, err
+			}
+			res.RenditionParams = x.(Text)
+		}
+	}
+	return res, nil
 }
