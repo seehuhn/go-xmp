@@ -34,6 +34,16 @@ import (
 // kilobytes regardless of input size, and enforces an internal size
 // limit (see [ErrPacketTooLarge]) to guard against unbounded or
 // hostile input.
+//
+// I/O errors from r are returned unchanged.  Errors caused by malformed
+// input (including [ErrPacketTooLarge]) are wrapped in [ErrMalformed]
+// so callers can classify them with errors.Is.
+//
+// If the input ends with the writable XMP packet trailer
+// <?xpacket end="w"?>, [Packet.PadToLength] of the returned packet is
+// set to the total number of input bytes consumed (covering the packet
+// content plus any trailing whitespace padding); see the field doc on
+// [Packet] for details.
 func Read(r io.Reader) (*Packet, error) {
 	pr, err := newPacketReader(r)
 	if err != nil {
@@ -49,20 +59,37 @@ func Read(r io.Reader) (*Packet, error) {
 		Properties: make(map[xml.Name]Raw),
 	}
 
+	classify := func(err error) error {
+		if pr.srcErr != nil {
+			return pr.srcErr
+		}
+		// wrap as ErrMalformed while preserving the underlying cause
+		// (e.g. ErrPacketTooLarge) so callers can still match it with
+		// errors.Is
+		return fmt.Errorf("%w: %w", ErrMalformed, err)
+	}
+
 	var level int
 	descriptionLevel := -1
 	propertyLevel := -1
 	var propertyElement []xml.Token
+	var trailer string
 tokenLoop:
 	for {
 		t, err := dec.Token()
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			return nil, err
+			return nil, classify(err)
 		}
 
 		switch t := t.(type) {
+		case xml.ProcInst:
+			if t.Target == "xpacket" {
+				if v, ok := xpacketEndAttr(t.Inst); ok {
+					trailer = v
+				}
+			}
 		case xml.StartElement:
 			if level > 0 || t.Name == nameRDFRoot {
 				level++
@@ -85,7 +112,7 @@ tokenLoop:
 						if p.About == nil {
 							p.About = aboutURL
 						} else if aboutURL != nil && *aboutURL != *p.About {
-							return nil, fmt.Errorf("inconsistent `about` attributes: %s != %s", p.About, aboutURL)
+							return nil, fmt.Errorf("%w: inconsistent `about` attributes: %s != %s", ErrMalformed, p.About, aboutURL)
 						}
 					default:
 						// Simple properties can be encoded as attributes of
@@ -126,7 +153,36 @@ tokenLoop:
 			propertyElement = append(propertyElement, xml.CopyToken(t))
 		}
 	}
+
+	if trailer == "w" {
+		p.PadToLength = pr.nRead
+	}
 	return p, nil
+}
+
+// xpacketEndAttr extracts the value of the end="..." attribute from
+// the body of an xpacket processing instruction.  Only PIs whose body
+// starts with end= are recognised; begin PIs are rejected even when
+// they smuggle the substring "end=" inside another attribute value.
+// Returns ok=false if the attribute is absent or unparsable.
+func xpacketEndAttr(inst []byte) (string, bool) {
+	s := strings.TrimLeft(string(inst), " \t\r\n")
+	if !strings.HasPrefix(s, "end=") {
+		return "", false
+	}
+	rest := s[4:]
+	if len(rest) < 2 {
+		return "", false
+	}
+	quote := rest[0]
+	if quote != '"' && quote != '\'' {
+		return "", false
+	}
+	before, _, ok := strings.Cut(rest[1:], string(quote))
+	if !ok {
+		return "", false
+	}
+	return before, true
 }
 
 // maxPropertyDepth caps the recursion depth of parsePropertyElement.

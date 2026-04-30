@@ -39,6 +39,17 @@ type Packet struct {
 	// About (optional) is the URL of the resource described by the XMP packet.
 	About *url.URL
 
+	// PadToLength, if positive, makes the packet writable in place
+	// inside a host-file segment of PadToLength bytes. [Packet.Write]
+	// emits the writable trailer <?xpacket end="w"?> and pads with
+	// whitespace to that length, returning [ErrPacketTooLong] if the
+	// content does not fit.
+	//
+	// [Read] sets PadToLength to the source byte count when the input
+	// used a writable trailer, so an unmodified round-trip fits the
+	// same segment.
+	PadToLength int
+
 	nsToPrefix map[string]string
 }
 
@@ -727,7 +738,15 @@ var ErrInvalid = errors.New("invalid XMP data")
 // present in the packet.
 var ErrNotFound = errors.New("property not found")
 
+// ErrMalformed is returned (wrapped) by [Read] when the input is not a
+// well-formed XMP packet. I/O errors from the underlying [io.Reader] are
+// returned unchanged; callers can use errors.Is to distinguish the two.
+var ErrMalformed = errors.New("xmp: malformed packet")
+
 // Equal reports whether p and other represent the same XMP packet.
+// Only the logical content (About and Properties) is compared;
+// serialization hints such as PadToLength and the namespace-prefix
+// preferences are ignored.
 func (p *Packet) Equal(other *Packet) bool {
 	if p == nil || other == nil {
 		return p == other
@@ -752,7 +771,6 @@ func (p *Packet) Equal(other *Packet) bool {
 		}
 	}
 
-	// nsToPrefix is not compared as per plan
 	return true
 }
 

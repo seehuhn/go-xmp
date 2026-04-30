@@ -33,27 +33,17 @@ import (
 type PacketOptions struct {
 	// Pretty controls whether the encoded XMP is indented for readability.
 	Pretty bool
-
-	// PadToLength controls trailing whitespace padding inside the XMP packet
-	// wrapper.
-	//
-	// If zero, no padding is added and the trailer reads
-	// <?xpacket end="r"?>, signalling that the packet is read-only.
-	//
-	// If positive, padding is added so that the encoded packet has exactly
-	// the requested length in bytes, and the trailer reads
-	// <?xpacket end="w"?>, signalling that the packet may be edited in
-	// place inside its host file. [Packet.Write] returns an error if the
-	// encoded packet does not fit in PadToLength bytes.
-	PadToLength int
 }
 
 // ErrPacketTooLong is returned by [Packet.Write] when the encoded packet
-// does not fit into the requested [PacketOptions.PadToLength].
+// does not fit into the requested [Packet.PadToLength].
 var ErrPacketTooLong = errors.New("xmp: encoded packet exceeds PadToLength")
 
 // Write writes the XMP packet to the given writer.
 func (p *Packet) Write(w io.Writer, opt *PacketOptions) error {
+	if p.PadToLength < 0 {
+		return fmt.Errorf("xmp: negative PadToLength %d", p.PadToLength)
+	}
 	e, err := p.newEncoder(w, opt)
 	if err != nil {
 		return err
@@ -186,9 +176,7 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 		nsToPrefix: nsToPrefix,
 		prefixToNS: prefixToNS,
 	}
-	if opt != nil {
-		e.padTo = opt.PadToLength
-	}
+	e.padTo = p.PadToLength
 
 	err := e.EncodeToken(xml.ProcInst{
 		Target: "xpacket",

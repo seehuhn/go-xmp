@@ -348,7 +348,8 @@ func TestPacketPadToLength(t *testing.T) {
 
 	for _, target := range []int{minLen, minLen + 1, minLen + 100, minLen + 4096} {
 		buf := &bytes.Buffer{}
-		err := p.Write(buf, &PacketOptions{PadToLength: target})
+		p.PadToLength = target
+		err := p.Write(buf, nil)
 		if err != nil {
 			t.Fatalf("PadToLength=%d: unexpected error: %v", target, err)
 		}
@@ -365,6 +366,12 @@ func TestPacketPadToLength(t *testing.T) {
 		if err != nil {
 			t.Fatalf("PadToLength=%d: round-trip read failed: %v", target, err)
 		}
+		if out.PadToLength != target {
+			t.Errorf("PadToLength=%d: round-trip lost padding length, got %d", target, out.PadToLength)
+		}
+		// reset PadToLength so cmp.Diff compares logical content only
+		out.PadToLength = 0
+		p.PadToLength = 0
 		if d := cmp.Diff(p, out, cmp.AllowUnexported(Packet{})); d != "" {
 			t.Errorf("PadToLength=%d: round-trip mismatch (-want +got):\n%s", target, d)
 		}
@@ -376,9 +383,22 @@ func TestPacketPadToLengthTooSmall(t *testing.T) {
 		Properties: map[xml.Name]Raw{
 			elemTest: Text{V: "hello"},
 		},
+		PadToLength: 10,
 	}
-	err := p.Write(&bytes.Buffer{}, &PacketOptions{PadToLength: 10})
+	err := p.Write(&bytes.Buffer{}, nil)
 	if !errors.Is(err, ErrPacketTooLong) {
 		t.Errorf("got %v, want ErrPacketTooLong", err)
+	}
+}
+
+func TestPacketPadToLengthNegative(t *testing.T) {
+	p := &Packet{
+		Properties: map[xml.Name]Raw{
+			elemTest: Text{V: "hello"},
+		},
+		PadToLength: -1,
+	}
+	if err := p.Write(&bytes.Buffer{}, nil); err == nil {
+		t.Error("negative PadToLength: expected error, got nil")
 	}
 }

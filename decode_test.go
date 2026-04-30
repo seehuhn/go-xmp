@@ -19,6 +19,7 @@ package xmp
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -728,6 +729,135 @@ func FuzzRoundTrip(f *testing.F) {
 			t.Fatalf("RoundTrip mismatch (-want +got):\n%s", d)
 		}
 	})
+}
+
+func TestRead_PadToLengthReadOnly(t *testing.T) {
+	const body = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">` +
+		`<dc:title>x</dc:title>` +
+		`</rdf:Description></rdf:RDF></x:xmpmeta>` +
+		`<?xpacket end="r"?>`
+	p, err := Read(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if p.PadToLength != 0 {
+		t.Errorf("read-only packet: PadToLength = %d, want 0", p.PadToLength)
+	}
+}
+
+func TestRead_PadToLengthMissingTrailer(t *testing.T) {
+	// Same body as above, but without the closing xpacket PI.
+	const body = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">` +
+		`<dc:title>x</dc:title>` +
+		`</rdf:Description></rdf:RDF></x:xmpmeta>`
+	p, err := Read(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if p.PadToLength != 0 {
+		t.Errorf("missing trailer: PadToLength = %d, want 0", p.PadToLength)
+	}
+}
+
+func TestRead_PadToLengthWritable(t *testing.T) {
+	const head = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">` +
+		`<dc:title>x</dc:title>` +
+		`</rdf:Description></rdf:RDF></x:xmpmeta>`
+	const trailer = `<?xpacket end="w"?>`
+	body := head + strings.Repeat(" ", 200) + trailer
+	p, err := Read(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if p.PadToLength != len(body) {
+		t.Errorf("writable trailer: PadToLength = %d, want %d", p.PadToLength, len(body))
+	}
+}
+
+func TestRead_PadToLengthBeginPISmuggle(t *testing.T) {
+	// A malformed begin PI whose id value contains the substring
+	// `end="w"`.  No closing xpacket PI follows.  PadToLength must
+	// stay 0; only PIs whose body starts with end= are honoured.
+	const body = `<?xpacket begin="" id="x end=` + `"w" "?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">` +
+		`<dc:title>x</dc:title>` +
+		`</rdf:Description></rdf:RDF></x:xmpmeta>`
+	p, err := Read(strings.NewReader(body))
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if p.PadToLength != 0 {
+		t.Errorf("smuggled end= in begin PI: PadToLength = %d, want 0", p.PadToLength)
+	}
+}
+
+func TestNewPacket_PadToLengthZero(t *testing.T) {
+	p := NewPacket()
+	if p.PadToLength != 0 {
+		t.Errorf("NewPacket: PadToLength = %d, want 0", p.PadToLength)
+	}
+}
+
+func TestRead_MalformedClassification(t *testing.T) {
+	// A truncated xpacket — the XML decoder reaches EOF mid-element.
+	const body = `<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description rdf:about=""`
+	_, err := Read(strings.NewReader(body))
+	if err == nil {
+		t.Fatal("Read on truncated input: expected error, got nil")
+	}
+	if !errors.Is(err, ErrMalformed) {
+		t.Errorf("Read on truncated input: got %v, want errors.Is(err, ErrMalformed)", err)
+	}
+}
+
+func TestRead_IOErrorPassThrough(t *testing.T) {
+	// Custom reader that returns a sentinel error mid-stream.
+	want := errors.New("custom I/O failure")
+	br := &errReader{
+		head: []byte(`<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
+			`<x:xmpmeta xmlns:x="adobe:ns:meta/">`),
+		err: want,
+	}
+	_, err := Read(br)
+	if err == nil {
+		t.Fatal("Read with failing reader: expected error, got nil")
+	}
+	if !errors.Is(err, want) {
+		t.Errorf("Read with failing reader: got %v, want errors.Is(err, want)", err)
+	}
+	if errors.Is(err, ErrMalformed) {
+		t.Errorf("Read with failing reader: I/O error wrapped as ErrMalformed: %v", err)
+	}
+}
+
+// errReader serves head bytes, then returns err.
+type errReader struct {
+	head []byte
+	pos  int
+	err  error
+}
+
+func (r *errReader) Read(p []byte) (int, error) {
+	if r.pos < len(r.head) {
+		n := copy(p, r.head[r.pos:])
+		r.pos += n
+		return n, nil
+	}
+	return 0, r.err
 }
 
 func TestRead_DeepNestingDoesNotOverflowStack(t *testing.T) {
