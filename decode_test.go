@@ -729,3 +729,36 @@ func FuzzRoundTrip(f *testing.F) {
 		}
 	})
 }
+
+func TestRead_DeepNestingDoesNotOverflowStack(t *testing.T) {
+	// Build a packet whose value is nested far deeper than
+	// maxPropertyDepth.  Read must not crash or grow the goroutine
+	// stack without bound; the depth cap silently drops nesting
+	// beyond the limit.
+	const nestDepth = 5000
+	var sb strings.Builder
+	sb.Grow(nestDepth * 80)
+	sb.WriteString(`<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>`)
+	sb.WriteString(`<x:xmpmeta xmlns:x="adobe:ns:meta/">`)
+	sb.WriteString(`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">`)
+	sb.WriteString(`<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">`)
+	sb.WriteString(`<dc:title rdf:parseType="Resource">`)
+	for range nestDepth {
+		sb.WriteString(`<dc:n rdf:parseType="Resource">`)
+	}
+	sb.WriteString(`<dc:leaf>x</dc:leaf>`)
+	for range nestDepth {
+		sb.WriteString(`</dc:n>`)
+	}
+	sb.WriteString(`</dc:title></rdf:Description></rdf:RDF></x:xmpmeta>`)
+	sb.WriteString(`<?xpacket end="r"?>`)
+
+	p, err := Read(strings.NewReader(sb.String()))
+	if err != nil {
+		t.Fatalf("Read failed on deeply nested input: %v", err)
+	}
+	titleName := xml.Name{Space: "http://purl.org/dc/elements/1.1/", Local: "title"}
+	if _, ok := p.Properties[titleName]; !ok {
+		t.Errorf("title property not present after deep-nesting parse")
+	}
+}

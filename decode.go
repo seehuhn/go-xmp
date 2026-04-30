@@ -26,9 +26,25 @@ import (
 	"seehuhn.de/go/xmp/jvxml"
 )
 
-// Read reads an XMP packet from a reader.
+// Read reads an XMP packet from a reader.  The input may be encoded in
+// UTF-8, UTF-16BE, or UTF-16LE; the encoding is detected from the
+// leading bytes.  UTF-32 is not supported.
+//
+// Read streams from r byte-by-byte: it never buffers more than a few
+// kilobytes regardless of input size, and enforces an internal size
+// limit (see [ErrPacketTooLarge]) to guard against unbounded or
+// hostile input.
 func Read(r io.Reader) (*Packet, error) {
-	dec := xml.NewDecoder(r)
+	pr, err := newPacketReader(r)
+	if err != nil {
+		return nil, err
+	}
+	dec := xml.NewDecoder(pr)
+	// packetReader has already transcoded the byte stream to UTF-8, so
+	// any encoding label on the XML declaration can be ignored.
+	dec.CharsetReader = func(_ string, r io.Reader) (io.Reader, error) {
+		return r, nil
+	}
 	p := &Packet{
 		Properties: make(map[xml.Name]Raw),
 	}
@@ -91,7 +107,7 @@ tokenLoop:
 				// including the start element, but not the end element.
 				start := propertyElement[0].(xml.StartElement)
 				if isValidPropertyName(start.Name) {
-					val := parsePropertyElement(start, propertyElement[1:], nil)
+					val := parsePropertyElement(start, propertyElement[1:], nil, 0)
 					if val != nil {
 						p.Properties[start.Name] = val
 					}
@@ -113,17 +129,31 @@ tokenLoop:
 	return p, nil
 }
 
+// maxPropertyDepth caps the recursion depth of parsePropertyElement.
+// XMP property nesting is bounded by struct/array/qualifier nesting in
+// the XML; real-world packets stay well below 10 levels deep.  The
+// limit prevents an adversarial packet from growing the goroutine
+// stack into the hundreds of MiB or triggering runtime: stack
+// overflow when combined with the input-size cap.  Hitting this cap
+// drops the offending sub-element silently, in keeping with the
+// permissive-reader principle.
+const maxPropertyDepth = 1000
+
 // ParsePropertyElement parses a property element and updates the packet. The
 // argument `start` is the start element of the property element, and `tokens`
 // contains the XML tokens which make up the property element (not including
-// the start and end elements).
+// the start and end elements).  The depth argument carries the current
+// recursion depth; the top-level call passes 0.
 //
 // This implements the rules from appendix C.2.5 (Content of a nodeElement)
 // of ISO 16684-1:2011.
 //
 // Invalid XML is ignored, and the function decodes as much of the property
 // element as possible.  If no valid data is found, the function returns nil.
-func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw {
+func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q, depth int) Raw {
+	if depth > maxPropertyDepth {
+		return nil
+	}
 	tp := getProperyElementType(start, tokens)
 	switch tp {
 	case literalPropertyElt:
@@ -157,8 +187,8 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 		}
 		child := children[0]
 
-		switch {
-		case child.name == nameRDFDescription:
+		switch child.name {
+		case nameRDFDescription:
 			descStart := tokens[child.start].(xml.StartElement)
 			inner := tokens[child.start+1 : child.end]
 			fields := getChildren(inner)
@@ -187,7 +217,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				}
 				for _, f := range fields {
 					if isValidQualifierName(f.name) {
-						val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
+						val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil, depth+1)
 						if val != nil {
 							qq = append(qq, Qualifier{Name: f.name, Value: val})
 						}
@@ -198,7 +228,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 					return Text{V: descStart.Attr[attrIdx].Value, Q: qq}
 				}
 				f := fields[valueIdx]
-				return parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
+				return parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq, depth+1)
 			}
 
 			// Otherwise, this is a structure.
@@ -213,7 +243,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			}
 			for _, f := range fields {
 				if isValidPropertyName(f.name) {
-					val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
+					val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil, depth+1)
 					if val != nil {
 						res.Value[f.name] = val
 					}
@@ -221,7 +251,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			}
 			return res
 
-		case child.name == nameRDFBag || child.name == nameRDFSeq || child.name == nameRDFAlt:
+		case nameRDFBag, nameRDFSeq, nameRDFAlt:
 			var tp RawArrayType
 			switch child.name {
 			case nameRDFBag:
@@ -239,7 +269,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				Q:     qq,
 			}
 			for _, i := range items {
-				val := parsePropertyElement(inner[i.start].(xml.StartElement), inner[i.start+1:i.end], nil)
+				val := parsePropertyElement(inner[i.start].(xml.StartElement), inner[i.start+1:i.end], nil, depth+1)
 				if val != nil {
 					res.Value = append(res.Value, val)
 				}
@@ -269,7 +299,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			if valueIdx >= 0 {
 				for _, f := range fields {
 					if isValidQualifierName(f.name) {
-						val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
+						val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil, depth+1)
 						if val != nil {
 							qq = append(qq, Qualifier{Name: f.name, Value: val})
 						}
@@ -277,7 +307,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 				}
 
 				f := fields[valueIdx]
-				return parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq)
+				return parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], qq, depth+1)
 			}
 
 			// Otherwise, this is a structure.
@@ -287,7 +317,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 			}
 			for _, f := range fields {
 				if isValidPropertyName(f.name) {
-					val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil)
+					val := parsePropertyElement(inner[f.start].(xml.StartElement), inner[f.start+1:f.end], nil, depth+1)
 					if val != nil {
 						res.Value[f.name] = val
 					}
@@ -320,14 +350,14 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 		if valueIdx >= 0 {
 			for _, f := range fields {
 				if isValidQualifierName(f.name) {
-					val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
+					val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil, depth+1)
 					if val != nil {
 						qq = append(qq, Qualifier{Name: f.name, Value: val})
 					}
 				}
 			}
 			f := fields[valueIdx]
-			return parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], qq)
+			return parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], qq, depth+1)
 		}
 
 		// Otherwise this is a structure.
@@ -337,7 +367,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q) Raw 
 		}
 		for _, f := range fields {
 			if isValidPropertyName(f.name) {
-				val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil)
+				val := parsePropertyElement(tokens[f.start].(xml.StartElement), tokens[f.start+1:f.end], nil, depth+1)
 				if val != nil {
 					res.Value[f.name] = val
 				}

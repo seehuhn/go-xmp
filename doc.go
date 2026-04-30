@@ -20,7 +20,13 @@
 //
 // The main type in this package is the [Packet] type, which represents an XMP
 // packet.  XMP packets can be read from file using the [Read] function and
-// written to file using the [Packet.Write] method.
+// written to file using the [Packet.Write] method.  Where the host file
+// format does not provide framing for the XMP packet, the [Scan] function
+// can locate the wrapper inside arbitrary bytes.
+//
+// The reader accepts XMP packets encoded in UTF-8, UTF-16BE, or UTF-16LE;
+// the encoding is detected from the leading bytes.  UTF-32 is not
+// supported.  The writer always emits UTF-8.
 //
 // # Properties
 //
