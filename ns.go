@@ -64,14 +64,58 @@ func getPrefix(prefixToNS map[string]string, ns string) string {
 }
 
 var defaultPrefix = map[string]string{
-	xmlNamespace: "xml",
-	rdfNamespace: "rdf",
+	NSXML: "xml",
+	NSRDF: "rdf",
 }
 
+// Namespace URIs for the predefined XMP schemas, plus the auxiliary
+// namespaces (XML, RDF, ResourceRef) used by the XMP serialization
+// itself.  The schema URIs (NSDublinCore through NSPDFXID) are
+// suitable for [Packet.SetValue], [PacketGetValue], and
+// [Packet.ClearValue]; NSXML, NSRDF, and NSResourceRef are exposed
+// for callers that need to recognise these namespaces in raw
+// property data, not as schema arguments.
 const (
-	// xmlNamespace is the namespace for XML.
-	xmlNamespace = "http://www.w3.org/XML/1998/namespace"
+	// NSXML is the namespace for XML built-in attributes such as xml:lang.
+	NSXML = "http://www.w3.org/XML/1998/namespace"
 
-	// rdfNamespace is the namespace for RDF.
-	rdfNamespace = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+	// NSRDF is the namespace for RDF.
+	NSRDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
+	// NSDublinCore is the namespace for the Dublin Core schema,
+	// represented by the [DublinCore] struct.
+	NSDublinCore = "http://purl.org/dc/elements/1.1/"
+
+	// NSBasic is the namespace for the XMP basic schema,
+	// represented by the [Basic] struct.
+	NSBasic = "http://ns.adobe.com/xap/1.0/"
+
+	// NSRightsManagement is the namespace for the XMP rights
+	// management schema, represented by the [RightsManagement] struct.
+	NSRightsManagement = "http://ns.adobe.com/xap/1.0/rights/"
+
+	// NSMediaManagement is the namespace for the XMP media management
+	// schema, represented by the [MediaManagement] struct.
+	NSMediaManagement = "http://ns.adobe.com/xap/1.0/mm/"
+
+	// NSPDF is the namespace for the Adobe PDF schema,
+	// represented by the [PDF] struct.
+	NSPDF = "http://ns.adobe.com/pdf/1.3/"
+
+	// NSPDFAID is the namespace for the PDF/A identification schema,
+	// represented by the [PDFAID] struct.
+	NSPDFAID = "http://www.aiim.org/pdfa/ns/id/"
+
+	// NSPDFX is the legacy Adobe PDF/X identification namespace used
+	// by PDF/X-1a, PDF/X-2, and PDF/X-3.  It is represented by the
+	// [PDFX] struct.
+	NSPDFX = "http://ns.adobe.com/pdfx/1.3/"
+
+	// NSPDFXID is the PDF/X identification namespace introduced in
+	// PDF/X-4.  It is represented by the [PDFXID] struct.
+	NSPDFXID = "http://www.npes.org/pdfx/ns/id/"
+
+	// NSResourceRef is the namespace for the XMP ResourceRef
+	// structured type, represented by the [ResourceRef] struct.
+	NSResourceRef = "http://ns.adobe.com/xap/1.0/sType/ResourceRef#"
 )

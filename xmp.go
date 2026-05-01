@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"maps"
 	"net/url"
 	"slices"
@@ -68,16 +69,21 @@ func (p *Packet) RegisterPrefix(ns, prefix string) {
 	p.nsToPrefix[ns] = prefix
 }
 
-// SetValue stores the given value in the packet.
-func (p *Packet) SetValue(namespace, propertyName string, value Value) {
-	if !isValidPropertyName(xml.Name{Space: namespace, Local: propertyName}) {
-		panic("invalid property name")
-	}
+// SetValue stores the given value in the packet.  It returns an error
+// wrapping [ErrInvalidName] if the namespace or property name is not a
+// valid XMP property identifier, or an error wrapping [ErrInvalid] if
+// the value cannot be encoded as a valid XMP property.
+func (p *Packet) SetValue(namespace, propertyName string, value Value) error {
 	name := xml.Name{Space: namespace, Local: propertyName}
 	if !isValidPropertyName(name) {
-		panic("invalid property name")
+		return fmt.Errorf("xmp: %s %s: %w", namespace, propertyName, ErrInvalidName)
 	}
-	p.Properties[name] = value.EncodeXMP(p)
+	raw, err := value.EncodeXMP(p)
+	if err != nil {
+		return err
+	}
+	p.Properties[name] = raw
+	return nil
 }
 
 // ClearValue removes the given property from the packet.
@@ -222,8 +228,8 @@ func (t Text) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (t Text) EncodeXMP(*Packet) Raw {
-	return t
+func (t Text) EncodeXMP(*Packet) (Raw, error) {
+	return t, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -342,8 +348,8 @@ func (u URL) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (u URL) EncodeXMP(*Packet) Raw {
-	return u
+func (u URL) EncodeXMP(*Packet) (Raw, error) {
+	return u, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -738,10 +744,34 @@ var ErrInvalid = errors.New("invalid XMP data")
 // present in the packet.
 var ErrNotFound = errors.New("property not found")
 
+// ErrInvalidName is returned (wrapped) by [Packet.SetValue] when the
+// namespace or property name is not a valid XMP property identifier.
+var ErrInvalidName = errors.New("invalid property name")
+
 // ErrMalformed is returned (wrapped) by [Read] when the input is not a
 // well-formed XMP packet. I/O errors from the underlying [io.Reader] are
 // returned unchanged; callers can use errors.Is to distinguish the two.
 var ErrMalformed = errors.New("xmp: malformed packet")
+
+// PropertyError reports a per-property decode failure from [Packet.Get],
+// identifying the property whose value could not be decoded into the
+// target struct field.  Multiple PropertyErrors from one Get call are
+// joined via [errors.Join]; callers can recover them with [errors.As].
+type PropertyError struct {
+	Name xml.Name
+	Err  error
+}
+
+// Error implements the error interface.
+func (e *PropertyError) Error() string {
+	if e.Name.Space != "" {
+		return fmt.Sprintf("xmp: %s %s: %v", e.Name.Space, e.Name.Local, e.Err)
+	}
+	return fmt.Sprintf("xmp: %s: %v", e.Name.Local, e.Err)
+}
+
+// Unwrap returns the underlying decode error.
+func (e *PropertyError) Unwrap() error { return e.Err }
 
 // Equal reports whether p and other represent the same XMP packet.
 // Only the logical content (About and Properties) is compared;

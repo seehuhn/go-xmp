@@ -599,6 +599,46 @@ var decodeTestCases = []decodeTestCase{
 			},
 		},
 	},
+
+	// xmlns declarations on the property element itself (rather than on
+	// the rdf:Description or rdf:RDF parent) must not change how the
+	// element is classified.  Some writers, including pikepdf, emit XMP
+	// in this style.
+	{
+		desc: "xmlns on literal property element",
+		in:   `<rdf:Description rdf:about=""><foo:p xmlns:foo="http://example.com/">hello</foo:p></rdf:Description>`,
+		out: &Packet{
+			Properties: map[xml.Name]Raw{
+				{Space: "http://example.com/", Local: "p"}: Text{V: "hello"},
+			},
+		},
+	},
+	{
+		desc: "xmlns on resource property element with rdf:Alt",
+		in:   `<rdf:Description rdf:about=""><foo:p xmlns:foo="http://example.com/"><rdf:Alt><rdf:li xml:lang="x-default">a title</rdf:li></rdf:Alt></foo:p></rdf:Description>`,
+		out: &Packet{
+			Properties: map[xml.Name]Raw{
+				{Space: "http://example.com/", Local: "p"}: RawArray{
+					Value: []Raw{
+						Text{V: "a title", Q: Q{{Name: nameXMLLang, Value: Text{V: "x-default"}}}},
+					},
+					Kind: Alternative,
+				},
+			},
+		},
+	},
+	{
+		desc: "xmlns on resource property element with rdf:Seq",
+		in:   `<rdf:Description rdf:about=""><foo:p xmlns:foo="http://example.com/"><rdf:Seq><rdf:li>x</rdf:li><rdf:li>y</rdf:li></rdf:Seq></foo:p></rdf:Description>`,
+		out: &Packet{
+			Properties: map[xml.Name]Raw{
+				{Space: "http://example.com/", Local: "p"}: RawArray{
+					Value: []Raw{Text{V: "x"}, Text{V: "y"}},
+					Kind:  Ordered,
+				},
+			},
+		},
+	},
 }
 
 func TestDecode(t *testing.T) {
@@ -627,13 +667,13 @@ func TestIsValidPropertyName(t *testing.T) {
 		{xml.Name{Space: "http://example.com", Local: ""}, false},
 
 		{nameRDFType, true}, // the only valid name in RDF namespace
-		{xml.Name{Space: rdfNamespace, Local: "resource"}, false},
-		{xml.Name{Space: rdfNamespace, Local: "p"}, false},
+		{xml.Name{Space: NSRDF, Local: "resource"}, false},
+		{xml.Name{Space: NSRDF, Local: "p"}, false},
 		{nameRDFValue, false},
 
 		// all of the xml: namespace is forbidden
 		{nameXMLLang, false},
-		{xml.Name{Space: xmlNamespace, Local: "p"}, false},
+		{xml.Name{Space: NSXML, Local: "p"}, false},
 
 		{xml.Name{Space: "0", Local: ":"}, false},
 	}
@@ -658,12 +698,12 @@ func TestIsValidQualifierName(t *testing.T) {
 		{xml.Name{Space: "http://example.com", Local: ""}, false},
 
 		{nameRDFType, true}, // the only valid name in RDF namespace
-		{xml.Name{Space: rdfNamespace, Local: "resource"}, false},
-		{xml.Name{Space: rdfNamespace, Local: "q"}, false},
+		{xml.Name{Space: NSRDF, Local: "resource"}, false},
+		{xml.Name{Space: NSRDF, Local: "q"}, false},
 		{nameRDFValue, false},
 
 		{nameXMLLang, true}, // the only valid name in XML namespace
-		{xml.Name{Space: xmlNamespace, Local: "q"}, false},
+		{xml.Name{Space: NSXML, Local: "q"}, false},
 	}
 	for i, tc := range tests {
 		t.Run(fmt.Sprintf("%02d", i), func(t *testing.T) {

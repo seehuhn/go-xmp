@@ -171,6 +171,64 @@ type PDF struct {
 	Trapped Text
 }
 
+// PDFAID represents the PDF/A identification namespace, which carries
+// the markers a PDF/A reader uses to recognise the conformance level
+// of a file.
+//
+// See ISO 19005 (parts 1, 2, 3, 4) and PDF Association TechNote 0008.
+type PDFAID struct {
+	_ Namespace `xmp:"http://www.aiim.org/pdfa/ns/id/"`
+	_ Prefix    `xmp:"pdfaid"`
+
+	// Part is the part of the PDF/A standard (1, 2, 3, or 4).  Required
+	// in every PDF/A file.
+	Part Integer `xmp:"part"`
+
+	// Conformance is the conformance level of the PDF/A standard.  In
+	// PDF/A-1, 2, and 3 it is one of "A", "B", or "U" and required.  In
+	// PDF/A-4 it is empty, "F", or "E" and optional.
+	Conformance Text `xmp:"conformance"`
+
+	// Amd is the optional amendment identifier, formatted as
+	// "<amendment-number>:<year>" (e.g. "1:2025").
+	Amd Text `xmp:"amd"`
+
+	// Rev is the dated revision of the PDF/A-4 standard, given as the
+	// 4-digit year of publication (e.g. 2020).  Required for PDF/A-4;
+	// absent in earlier parts.
+	Rev Integer `xmp:"rev"`
+}
+
+// PDFX represents the legacy Adobe PDF/X identification namespace,
+// used by PDF/X-1a, PDF/X-2, and PDF/X-3.  PDF/X-4 and later use
+// [PDFXID] instead.
+//
+// See ISO 15930, parts 1, 4, 5, and 6.
+type PDFX struct {
+	_ Namespace `xmp:"http://ns.adobe.com/pdfx/1.3/"`
+	_ Prefix    `xmp:"pdfx"`
+
+	// Version is the ID of the PDF/X standard, e.g. "PDF/X-1:2001"
+	// or "PDF/X-3:2002".
+	Version Text `xmp:"GTS_PDFXVersion"`
+
+	// Conformance is the conformance level of the PDF/X standard,
+	// e.g. "PDF/X-1a:2001".
+	Conformance Text `xmp:"GTS_PDFXConformance"`
+}
+
+// PDFXID represents the PDF/X identification namespace introduced in
+// PDF/X-4 and used by PDF/X-4 and PDF/X-5.
+//
+// See ISO 15930-7 (PDF/X-4) and ISO 15930-8 (PDF/X-5).
+type PDFXID struct {
+	_ Namespace `xmp:"http://www.npes.org/pdfx/ns/id/"`
+	_ Prefix    `xmp:"pdfxid"`
+
+	// Version is the ID of the PDF/X standard, e.g. "PDF/X-4".
+	Version Text `xmp:"GTS_PDFXVersion"`
+}
+
 // MediaManagement represents the XMP Media Management namespace.
 //
 // See section 8.6 of ISO 16684-1:2011 for details.
@@ -201,12 +259,14 @@ type MediaManagement struct {
 
 // Set stores the property values from one or more XMP namespace structs in
 // the packet.  Predefined namespace structs include [DublinCore], [Basic],
-// [RightsManagement], [PDF], and [MediaManagement]; see [Namespace] for how
-// to define your own.
+// [RightsManagement], [PDF], [PDFAID], [PDFX], [PDFXID], and
+// [MediaManagement]; see [Namespace] for how to define your own.
 //
-// Each argument must be a (pointer to a) namespace struct.  Set returns an
-// error if an argument has the wrong shape, e.g. is not a struct or lacks a
-// [Namespace] field.
+// Each argument must be a (pointer to a) namespace struct.  Set returns
+// an error if an argument has the wrong shape, e.g. is not a struct or
+// lacks a [Namespace] field, and propagates the errors from
+// [Packet.SetValue] when a field's value cannot be encoded as a valid
+// XMP property (wrapping [ErrInvalid] or [ErrInvalidName]).
 func (p *Packet) Set(models ...any) error {
 	for _, v := range models {
 		if err := p.setOne(v); err != nil {
@@ -254,7 +314,9 @@ func (p *Packet) setOne(v any) error {
 			propertyName = fInfo.Name
 		}
 		if !val.IsZero() {
-			p.SetValue(namespace, propertyName, val)
+			if err := p.SetValue(namespace, propertyName, val); err != nil {
+				return err
+			}
 		} else {
 			p.ClearValue(namespace, propertyName)
 		}
@@ -265,13 +327,20 @@ func (p *Packet) setOne(v any) error {
 
 // Get fills the fields of an XMP namespace struct with property values from
 // the packet.  Predefined namespace structs include [DublinCore], [Basic],
-// [RightsManagement], [PDF], and [MediaManagement]; see [Namespace] for how
-// to define your own.
+// [RightsManagement], [PDF], [PDFAID], [PDFX], [PDFXID], and
+// [MediaManagement]; see [Namespace] for how to define your own.
 //
 // The argument dst must be a non-nil pointer to such a struct, otherwise
 // Get panics.  Properties not present in the packet are set to the zero
 // value of their field type.
-func (p *Packet) Get(dst any) {
+//
+// Get returns nil when every present property decoded successfully.
+// When one or more properties are present but malformed, their
+// corresponding fields are left at the zero value, the other fields
+// are still populated, and Get returns the per-property errors joined
+// via [errors.Join].  Each individual error is a [*PropertyError]
+// wrapping [ErrInvalid].
+func (p *Packet) Get(dst any) error {
 	s := reflect.Indirect(reflect.ValueOf(dst))
 	st := s.Type()
 
@@ -288,6 +357,7 @@ func (p *Packet) Get(dst any) {
 		panic("not an XMP namespace struct")
 	}
 
+	var errs []error
 	for i := 0; i < st.NumField(); i++ {
 		fVal := s.Field(i)
 		fInfo := st.Field(i)
@@ -311,10 +381,12 @@ func (p *Packet) Get(dst any) {
 		val := fVal.Interface().(Value)
 		u, err := val.DecodeAnother(xmpData)
 		if err != nil {
+			errs = append(errs, &PropertyError{Name: name, Err: err})
 			continue
 		}
 		fVal.Set(reflect.ValueOf(u))
 	}
+	return errors.Join(errs...)
 }
 
 var (

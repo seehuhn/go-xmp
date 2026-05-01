@@ -18,8 +18,11 @@ package xmp
 
 import (
 	"encoding/xml"
+	"fmt"
+	"math"
 	"mime"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +38,9 @@ type Value interface {
 	IsZero() bool
 
 	// EncodeXMP returns the low-level XMP representation of a value.
-	EncodeXMP(*Packet) Raw
+	// It returns an error wrapping [ErrInvalid] if the value cannot be
+	// represented in a valid XMP packet.
+	EncodeXMP(*Packet) (Raw, error)
 
 	// DecodeAnother converts a low-level XMP representation into a [Value].
 	// The resulting Value must have the same concrete type as the receiver.
@@ -65,11 +70,11 @@ func (p ProperName) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (p ProperName) EncodeXMP(*Packet) Raw {
+func (p ProperName) EncodeXMP(*Packet) (Raw, error) {
 	return Text{
 		V: p.V,
 		Q: p.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -112,11 +117,11 @@ func (a AgentName) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (a AgentName) EncodeXMP(*Packet) Raw {
+func (a AgentName) EncodeXMP(*Packet) (Raw, error) {
 	return Text{
 		V: a.V,
 		Q: a.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -152,11 +157,11 @@ func (t RenditionClass) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (t RenditionClass) EncodeXMP(*Packet) Raw {
+func (t RenditionClass) EncodeXMP(*Packet) (Raw, error) {
 	return Text{
 		V: t.V,
 		Q: t.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -180,11 +185,11 @@ func (t GUID) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (t GUID) EncodeXMP(*Packet) Raw {
+func (t GUID) EncodeXMP(*Packet) (Raw, error) {
 	return Text{
 		V: t.V,
 		Q: t.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -208,7 +213,10 @@ func (r Real) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (r Real) EncodeXMP(*Packet) Raw {
+func (r Real) EncodeXMP(*Packet) (Raw, error) {
+	if math.IsNaN(r.V) || math.IsInf(r.V, 0) {
+		return nil, fmt.Errorf("xmp: Real %v: %w", r.V, ErrInvalid)
+	}
 	out := strconv.FormatFloat(r.V, 'f', -1, 64)
 	if m := tailRegexp.FindStringSubmatchIndex(out); m != nil {
 		if m[2] > 0 {
@@ -223,7 +231,7 @@ func (r Real) EncodeXMP(*Packet) Raw {
 	return Text{
 		V: out,
 		Q: r.Q,
-	}
+	}, nil
 }
 
 var (
@@ -241,6 +249,43 @@ func (Real) DecodeAnother(val Raw) (Value, error) {
 		return nil, ErrInvalid
 	}
 	return Real{f, v.Q}, nil
+}
+
+// Integer represents a signed integer.
+type Integer struct {
+	V int64
+	Q
+}
+
+// NewInteger creates a new XMP integer value.
+func NewInteger(v int64, qualifiers ...Qualifier) Integer {
+	return Integer{V: v, Q: Q(qualifiers)}
+}
+
+// IsZero implements the [Value] interface.
+func (i Integer) IsZero() bool {
+	return i.V == 0 && len(i.Q) == 0
+}
+
+// EncodeXMP implements the [Value] interface.
+func (i Integer) EncodeXMP(*Packet) (Raw, error) {
+	return Text{
+		V: strconv.FormatInt(i.V, 10),
+		Q: i.Q,
+	}, nil
+}
+
+// DecodeAnother implements the [Value] interface.
+func (Integer) DecodeAnother(val Raw) (Value, error) {
+	v, ok := val.(Text)
+	if !ok {
+		return nil, ErrInvalid
+	}
+	n, err := strconv.ParseInt(strings.TrimSpace(v.V), 10, 64)
+	if err != nil {
+		return nil, ErrInvalid
+	}
+	return Integer{n, v.Q}, nil
 }
 
 // Date represents a date and time.
@@ -266,7 +311,7 @@ func (d Date) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (d Date) EncodeXMP(*Packet) Raw {
+func (d Date) EncodeXMP(*Packet) (Raw, error) {
 	numOmitted := d.NumOmitted
 	numOmitted = min(numOmitted, len(dateFormats)-1)
 	numOmitted = max(numOmitted, 0)
@@ -274,7 +319,7 @@ func (d Date) EncodeXMP(*Packet) Raw {
 	return Text{
 		V: d.V.Format(format),
 		Q: d.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -329,11 +374,11 @@ func (l Locale) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (l Locale) EncodeXMP(*Packet) Raw {
+func (l Locale) EncodeXMP(*Packet) (Raw, error) {
 	return Text{
 		V: l.V.String(),
 		Q: l.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -371,11 +416,15 @@ func (m MimeType) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (m MimeType) EncodeXMP(*Packet) Raw {
-	return Text{
-		V: mime.FormatMediaType(m.V, m.Param),
-		Q: m.Q,
+func (m MimeType) EncodeXMP(*Packet) (Raw, error) {
+	formatted := mime.FormatMediaType(m.V, m.Param)
+	if formatted == "" && m.V != "" {
+		return nil, fmt.Errorf("xmp: MimeType %q: %w", m.V, ErrInvalid)
 	}
+	return Text{
+		V: formatted,
+		Q: m.Q,
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -432,23 +481,23 @@ func (o OptionalBool) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (o OptionalBool) EncodeXMP(*Packet) Raw {
+func (o OptionalBool) EncodeXMP(*Packet) (Raw, error) {
 	switch o.V {
 	case 1:
 		return Text{
 			V: "False",
 			Q: o.Q,
-		}
+		}, nil
 	case 2:
 		return Text{
 			V: "True",
 			Q: o.Q,
-		}
+		}, nil
 	}
 	return Text{
 		V: "",
 		Q: o.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -487,16 +536,20 @@ func (u UnorderedArray[E]) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (u UnorderedArray[E]) EncodeXMP(p *Packet) Raw {
+func (u UnorderedArray[E]) EncodeXMP(p *Packet) (Raw, error) {
 	var vals []Raw
 	for _, v := range u.V {
-		vals = append(vals, v.EncodeXMP(p))
+		raw, err := v.EncodeXMP(p)
+		if err != nil {
+			return nil, err
+		}
+		vals = append(vals, raw)
 	}
 	return RawArray{
 		Value: vals,
 		Kind:  Unordered,
 		Q:     u.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -545,16 +598,20 @@ func (o OrderedArray[E]) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (o OrderedArray[E]) EncodeXMP(p *Packet) Raw {
+func (o OrderedArray[E]) EncodeXMP(p *Packet) (Raw, error) {
 	var vals []Raw
 	for _, v := range o.V {
-		vals = append(vals, v.EncodeXMP(p))
+		raw, err := v.EncodeXMP(p)
+		if err != nil {
+			return nil, err
+		}
+		vals = append(vals, raw)
 	}
 	return RawArray{
 		Value: vals,
 		Kind:  Ordered,
 		Q:     o.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -600,16 +657,20 @@ func (a AlternativeArray[E]) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (a AlternativeArray[E]) EncodeXMP(p *Packet) Raw {
+func (a AlternativeArray[E]) EncodeXMP(p *Packet) (Raw, error) {
 	var vals []Raw
 	for _, v := range a.V {
-		vals = append(vals, v.EncodeXMP(p))
+		raw, err := v.EncodeXMP(p)
+		if err != nil {
+			return nil, err
+		}
+		vals = append(vals, raw)
 	}
 	return RawArray{
 		Value: vals,
 		Kind:  Alternative,
 		Q:     a.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -642,19 +703,35 @@ func (AlternativeArray[E]) DecodeAnother(val Raw) (Value, error) {
 
 // Localized represents a localized text value.  This is a map from language
 // tags to strings.  This is implemented as an XMP "Language Alternative".
+//
+// The XMP Language Alternative array carries one item with the special
+// language tag "x-default", whose text duplicates one of the other entries
+// and tells readers which language to display when no better match is
+// available.  In this Go representation the x-default text lives in the
+// [Localized.Default] field, never as a key in [Localized.V].
 type Localized struct {
+	// V holds the per-language text entries.  The "x-default" tag
+	// must not appear as a key here; use [Localized.Default]
+	// instead.  Encoding a Localized whose V contains x-default
+	// returns an error wrapping [ErrInvalid].
 	V map[language.Tag]Text
 
-	// Default (optional) is the default value for the property.
-	// If Value is non-empty, the text contents of Default must coincide with
-	// the text contents of one of the values in the map.
+	// Default (optional) is the text emitted with the "x-default" tag.
+	// Its contents are expected to match one of the entries in V; an
+	// empty Default means the array has no default item.
 	Default Text
 
 	Q
 }
 
-// Set sets the text value for a specific language.
+// Set stores the text value for a specific language.  Setting the value
+// for the special "x-default" tag updates [Localized.Default] instead of
+// adding a key to [Localized.V].
 func (l *Localized) Set(lang language.Tag, txt string, qualifiers ...Qualifier) {
+	if lang == defaultLanguage {
+		l.Default = NewText(txt, qualifiers...)
+		return
+	}
 	if l.V == nil {
 		l.V = make(map[language.Tag]Text)
 	}
@@ -669,29 +746,30 @@ func (l Localized) IsZero() bool {
 var defaultLanguage = language.MustParse("x-default")
 
 // EncodeXMP implements the [Value] interface.
-func (l Localized) EncodeXMP(*Packet) Raw {
-	var vals []Raw
+func (l Localized) EncodeXMP(*Packet) (Raw, error) {
+	if _, ok := l.V[defaultLanguage]; ok {
+		return nil, fmt.Errorf("xmp: Localized.V contains x-default key: %w", ErrInvalid)
+	}
 
+	var vals []Raw
 	if l.Default.V != "" {
-		t := Text{
+		vals = append(vals, Text{
 			V: l.Default.V,
 			Q: l.Default.Q.WithLanguage(defaultLanguage),
-		}
-		vals = append(vals, t)
+		})
 	}
 	for lang, txt := range l.V {
-		t := Text{
+		vals = append(vals, Text{
 			V: txt.V,
 			Q: txt.Q.WithLanguage(lang),
-		}
-		vals = append(vals, t)
+		})
 	}
 
 	return RawArray{
 		Value: vals,
 		Kind:  Alternative,
 		Q:     l.Q,
-	}
+	}, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -728,6 +806,31 @@ func (Localized) DecodeAnother(val Raw) (Value, error) {
 	return res, nil
 }
 
+// Best returns the text value most appropriate for the requested
+// language.  It picks the best reasonable match for lang from
+// [Localized.V] using [language.Matcher]; if no entry is a reasonable
+// match (or lang is [language.Und]), it returns [Localized.Default].
+// Returns "" when neither a reasonable match nor a default is
+// available.
+func (l Localized) Best(lang language.Tag) string {
+	if len(l.V) > 0 && lang != language.Und {
+		// sort tags so the matcher's tie-break is deterministic
+		tags := make([]language.Tag, 0, len(l.V))
+		for t := range l.V {
+			tags = append(tags, t)
+		}
+		slices.SortFunc(tags, func(a, b language.Tag) int {
+			return strings.Compare(a.String(), b.String())
+		})
+		m := language.NewMatcher(tags)
+		_, idx, conf := m.Match(lang)
+		if conf >= language.Low && idx >= 0 && idx < len(tags) {
+			return l.V[tags[idx]].V
+		}
+	}
+	return l.Default.V
+}
+
 // ResourceRef represents a reference to an external resource.
 //
 // This corresponds to the XMP "ResourceRef" structured type defined in
@@ -755,8 +858,6 @@ type ResourceRef struct {
 	Q
 }
 
-const resourceRefNamespace = "http://ns.adobe.com/xap/1.0/sType/ResourceRef#"
-
 // IsZero implements the [Value] interface.
 func (r ResourceRef) IsZero() bool {
 	return r.DocumentID.IsZero() &&
@@ -768,28 +869,46 @@ func (r ResourceRef) IsZero() bool {
 }
 
 // EncodeXMP implements the [Value] interface.
-func (r ResourceRef) EncodeXMP(p *Packet) Raw {
-	p.RegisterPrefix(resourceRefNamespace, "stRef")
+func (r ResourceRef) EncodeXMP(p *Packet) (Raw, error) {
+	p.RegisterPrefix(NSResourceRef, "stRef")
 	res := RawStruct{
 		Value: map[xml.Name]Raw{},
 		Q:     r.Q,
 	}
+	encode := func(local string, v Value) error {
+		raw, err := v.EncodeXMP(p)
+		if err != nil {
+			return err
+		}
+		res.Value[xml.Name{Space: NSResourceRef, Local: local}] = raw
+		return nil
+	}
 	if !r.DocumentID.IsZero() {
-		res.Value[xml.Name{Space: resourceRefNamespace, Local: "documentID"}] = r.DocumentID.EncodeXMP(p)
+		if err := encode("documentID", r.DocumentID); err != nil {
+			return nil, err
+		}
 	}
 	if !r.FilePath.IsZero() {
-		res.Value[xml.Name{Space: resourceRefNamespace, Local: "filePath"}] = r.FilePath.EncodeXMP(p)
+		if err := encode("filePath", r.FilePath); err != nil {
+			return nil, err
+		}
 	}
 	if !r.InstanceID.IsZero() {
-		res.Value[xml.Name{Space: resourceRefNamespace, Local: "instanceID"}] = r.InstanceID.EncodeXMP(p)
+		if err := encode("instanceID", r.InstanceID); err != nil {
+			return nil, err
+		}
 	}
 	if !r.RenditionClass.IsZero() {
-		res.Value[xml.Name{Space: resourceRefNamespace, Local: "renditionClass"}] = r.RenditionClass.EncodeXMP(p)
+		if err := encode("renditionClass", r.RenditionClass); err != nil {
+			return nil, err
+		}
 	}
 	if !r.RenditionParams.IsZero() {
-		res.Value[xml.Name{Space: resourceRefNamespace, Local: "renditionParams"}] = r.RenditionParams.EncodeXMP(p)
+		if err := encode("renditionParams", r.RenditionParams); err != nil {
+			return nil, err
+		}
 	}
-	return res
+	return res, nil
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -800,7 +919,7 @@ func (ResourceRef) DecodeAnother(val Raw) (Value, error) {
 	}
 	res := ResourceRef{Q: s.Q}
 	for name, v := range s.Value {
-		if name.Space != resourceRefNamespace {
+		if name.Space != NSResourceRef {
 			continue
 		}
 		switch name.Local {

@@ -17,6 +17,8 @@
 package xmp
 
 import (
+	"encoding/xml"
+	"errors"
 	"testing"
 	"time"
 
@@ -39,7 +41,9 @@ func TestTag(t *testing.T) {
 	}
 
 	dc2 := DublinCore{}
-	p.Get(&dc2)
+	if err := p.Get(&dc2); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
 
 	if d := cmp.Diff(dc1, &dc2); d != "" {
 		t.Errorf("dc1 and dc2 differ (-want +got):\n%s", d)
@@ -111,6 +115,38 @@ func TestRoundTripPDF(t *testing.T) {
 	roundTrip(t, in, out)
 }
 
+func TestRoundTripPDFAID(t *testing.T) {
+	// PDF/A-2u
+	in := &PDFAID{
+		Part:        NewInteger(2),
+		Conformance: NewText("U"),
+	}
+	roundTrip(t, in, &PDFAID{})
+
+	// PDF/A-4 with rev and amendment
+	inA4 := &PDFAID{
+		Part: NewInteger(4),
+		Rev:  NewInteger(2020),
+		Amd:  NewText("1:2025"),
+	}
+	roundTrip(t, inA4, &PDFAID{})
+}
+
+func TestRoundTripPDFX(t *testing.T) {
+	in := &PDFX{
+		Version:     NewText("PDF/X-1:2001"),
+		Conformance: NewText("PDF/X-1a:2001"),
+	}
+	roundTrip(t, in, &PDFX{})
+}
+
+func TestRoundTripPDFXID(t *testing.T) {
+	in := &PDFXID{
+		Version: NewText("PDF/X-4"),
+	}
+	roundTrip(t, in, &PDFXID{})
+}
+
 func TestRoundTripMediaManagement(t *testing.T) {
 	in := &MediaManagement{
 		DerivedFrom: ResourceRef{
@@ -130,6 +166,76 @@ func TestRoundTripMediaManagement(t *testing.T) {
 	roundTrip(t, in, out)
 }
 
+// TestGetReturnsDecodeError checks that [Packet.Get] surfaces decode
+// failures via [errors.Join] of [*PropertyError] values, while still
+// populating fields whose data decoded successfully.
+func TestGetReturnsDecodeError(t *testing.T) {
+	p := NewPacket()
+	// good field: pdfaid:part = 2
+	p.SetValue(NSPDFAID, "part", NewInteger(2))
+	// bad field: pdfaid:rev set to a non-numeric Text
+	p.SetValue(NSPDFAID, "rev", Text{V: "not a number"})
+
+	var got PDFAID
+	err := p.Get(&got)
+	if err == nil {
+		t.Fatal("Get: expected error, got nil")
+	}
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("errors.Is(err, ErrInvalid) = false, want true (err: %v)", err)
+	}
+
+	var pe *PropertyError
+	if !errors.As(err, &pe) {
+		t.Fatalf("errors.As(*PropertyError) = false, want true (err: %v)", err)
+	}
+	want := xml.Name{Space: NSPDFAID, Local: "rev"}
+	if pe.Name != want {
+		t.Errorf("PropertyError.Name = %v, want %v", pe.Name, want)
+	}
+
+	// the good field still populates
+	if got.Part.V != 2 {
+		t.Errorf("Part.V = %d, want 2", got.Part.V)
+	}
+	// the bad field was left at the zero value
+	if got.Rev.V != 0 {
+		t.Errorf("Rev.V = %d, want 0 (zero on decode failure)", got.Rev.V)
+	}
+}
+
+// TestGetReturnsDecodeErrorArray checks that decode failures from
+// nested array elements still propagate as [*PropertyError] wrapping
+// [ErrInvalid], so the contract documented on [Packet.Get] holds for
+// non-scalar types too.
+func TestGetReturnsDecodeErrorArray(t *testing.T) {
+	p := NewPacket()
+	// dc:creator must be an OrderedArray of ProperName (Text).  Plant a
+	// non-Text entry so OrderedArray.DecodeAnother propagates the inner
+	// element's ErrInvalid up the stack.
+	p.Properties[xml.Name{Space: NSDublinCore, Local: "creator"}] = RawArray{
+		Kind:  Ordered,
+		Value: []Raw{Text{V: "Alice"}, RawArray{}},
+	}
+
+	var dc DublinCore
+	err := p.Get(&dc)
+	if err == nil {
+		t.Fatal("Get: expected error, got nil")
+	}
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("errors.Is(err, ErrInvalid) = false, want true (err: %v)", err)
+	}
+	var pe *PropertyError
+	if !errors.As(err, &pe) {
+		t.Fatalf("errors.As(*PropertyError) = false, want true (err: %v)", err)
+	}
+	want := xml.Name{Space: NSDublinCore, Local: "creator"}
+	if pe.Name != want {
+		t.Errorf("PropertyError.Name = %v, want %v", pe.Name, want)
+	}
+}
+
 // roundTrip stores in into a fresh packet via [Packet.Set], reads it back
 // into out via [Packet.Get], and reports any differences.
 func roundTrip(t *testing.T, in, out any) {
@@ -138,7 +244,9 @@ func roundTrip(t *testing.T, in, out any) {
 	if err := p.Set(in); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	p.Get(out)
+	if err := p.Get(out); err != nil {
+		t.Fatalf("Get: %v", err)
+	}
 	if d := cmp.Diff(in, out, cmpopts.EquateComparable(language.Tag{})); d != "" {
 		t.Errorf("round trip failed (-want +got):\n%s", d)
 	}

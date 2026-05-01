@@ -124,8 +124,8 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 	// Gather a list of all namespaces used in the packet.
 	nsUsed := make(map[string]struct{})
-	nsUsed[xmlNamespace] = struct{}{}
-	nsUsed[rdfNamespace] = struct{}{}
+	nsUsed[NSXML] = struct{}{}
+	nsUsed[NSRDF] = struct{}{}
 	for key, value := range p.Properties {
 		nsUsed[key.Space] = struct{}{}
 		value.getNamespaces(nsUsed)
@@ -136,10 +136,10 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 	nsToPrefix := make(map[string]string)
 	prefixToNS := make(map[string]string)
 	// register default namespaces first, ...
-	nsToPrefix[xmlNamespace] = "xml"
-	prefixToNS["xml"] = xmlNamespace
-	nsToPrefix[rdfNamespace] = "rdf"
-	prefixToNS["rdf"] = rdfNamespace
+	nsToPrefix[NSXML] = "xml"
+	prefixToNS["xml"] = NSXML
+	nsToPrefix[NSRDF] = "rdf"
+	prefixToNS["rdf"] = NSRDF
 	// ... then the ones registered in the packet, ...
 	for _, ns := range nsList {
 		if _, alreadyDone := nsToPrefix[ns]; alreadyDone {
@@ -194,7 +194,7 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 	var attrs []xml.Attr
 	namespaces := slices.Sorted(maps.Keys(e.nsToPrefix))
 	for _, ns := range namespaces {
-		if ns == xmlNamespace {
+		if ns == NSXML {
 			continue
 		}
 		pfx := e.nsToPrefix[ns]

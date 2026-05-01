@@ -210,7 +210,7 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q, dept
 	if depth > maxPropertyDepth {
 		return nil
 	}
-	tp := getProperyElementType(start, tokens)
+	tp := getPropertyElementType(start, tokens)
 	switch tp {
 	case literalPropertyElt:
 		// See appendix C.2.7 of ISO 16684-1:2011.
@@ -521,16 +521,29 @@ func parsePropertyElement(start xml.StartElement, tokens []xml.Token, qq Q, dept
 	}
 }
 
-// getProperyElementType determines the RDF type of a property element.
+// getPropertyElementType determines the RDF type of a property element.
 //
 // This implements the rules from appendix C.2.5 (Content of a nodeElement)
 // of ISO 16684-1:2011.
-func getProperyElementType(start xml.StartElement, tokens []xml.Token) propertyElementType {
-	if len(start.Attr) > 3 {
+func getPropertyElementType(start xml.StartElement, tokens []xml.Token) propertyElementType {
+	// count of XMP-significant attributes; xmlns declarations and other
+	// XML-level attributes don't count toward the spec's "at most three"
+	// limit for emptyPropertyElt classification
+	significant := 0
+	for _, a := range start.Attr {
+		if isXMLNamespaceAttr(a.Name) {
+			continue
+		}
+		significant++
+	}
+	if significant > 3 {
 		return emptyPropertyElt
 	}
 
 	for _, a := range start.Attr {
+		if isXMLNamespaceAttr(a.Name) {
+			continue
+		}
 		switch a.Name {
 		case nameXMLLang:
 			continue
@@ -607,14 +620,27 @@ func getChildren(tokens []xml.Token) []childElement {
 	return children
 }
 
+// isXMLNamespaceAttr reports whether an attribute is an XML namespace
+// declaration (xmlns="..." or xmlns:foo="...") rather than a content-bearing
+// attribute.  Go's encoding/xml exposes namespace declarations in the same
+// Attr slice as ordinary attributes, so the XMP property-element rules in
+// appendix C.2.5 of ISO 16684-1:2011 (which count and classify "real"
+// attributes) must skip them.
+func isXMLNamespaceAttr(n xml.Name) bool {
+	if n.Space == "xmlns" {
+		return true
+	}
+	return n.Space == "" && n.Local == "xmlns"
+}
+
 func isValidPropertyName(n xml.Name) bool {
-	if n.Space == "" || n.Space == xmlNamespace || n.Space == "xmlns" {
+	if n.Space == "" || n.Space == NSXML || n.Space == "xmlns" {
 		return false
 	}
 	if !jvxml.IsName([]byte(n.Local)) || strings.Contains(n.Local, ":") {
 		return false
 	}
-	if n.Space == rdfNamespace && n != nameRDFType {
+	if n.Space == NSRDF && n != nameRDFType {
 		return false
 	}
 	if _, err := url.Parse(n.Space); err != nil {
@@ -627,10 +653,13 @@ func isValidQualifierName(n xml.Name) bool {
 	if n.Space == "" || n.Local == "" {
 		return false
 	}
-	if n.Space == rdfNamespace && n != nameRDFType {
+	if n.Space == "xmlns" {
 		return false
 	}
-	if n.Space == xmlNamespace && n != nameXMLLang {
+	if n.Space == NSRDF && n != nameRDFType {
+		return false
+	}
+	if n.Space == NSXML && n != nameXMLLang {
 		return false
 	}
 	if _, err := url.Parse(n.Space); err != nil {
@@ -640,21 +669,21 @@ func isValidQualifierName(n xml.Name) bool {
 }
 
 var (
-	nameRDFAbout       = xml.Name{Space: rdfNamespace, Local: "about"}
-	nameRDFAlt         = xml.Name{Space: rdfNamespace, Local: "Alt"}
-	nameRDFBag         = xml.Name{Space: rdfNamespace, Local: "Bag"}
-	nameRDFDataType    = xml.Name{Space: rdfNamespace, Local: "datatype"}
-	nameRDFDescription = xml.Name{Space: rdfNamespace, Local: "Description"}
-	nameRDFID          = xml.Name{Space: rdfNamespace, Local: "ID"}
-	nameRDFLi          = xml.Name{Space: rdfNamespace, Local: "li"}
-	nameRDFNodeID      = xml.Name{Space: rdfNamespace, Local: "nodeID"}
-	nameRDFParseType   = xml.Name{Space: rdfNamespace, Local: "parseType"}
-	nameRDFResource    = xml.Name{Space: rdfNamespace, Local: "resource"}
-	nameRDFRoot        = xml.Name{Space: rdfNamespace, Local: "RDF"}
-	nameRDFSeq         = xml.Name{Space: rdfNamespace, Local: "Seq"}
-	nameRDFType        = xml.Name{Space: rdfNamespace, Local: "type"}
-	nameRDFValue       = xml.Name{Space: rdfNamespace, Local: "value"}
-	nameXMLLang        = xml.Name{Space: xmlNamespace, Local: "lang"}
+	nameRDFAbout       = xml.Name{Space: NSRDF, Local: "about"}
+	nameRDFAlt         = xml.Name{Space: NSRDF, Local: "Alt"}
+	nameRDFBag         = xml.Name{Space: NSRDF, Local: "Bag"}
+	nameRDFDataType    = xml.Name{Space: NSRDF, Local: "datatype"}
+	nameRDFDescription = xml.Name{Space: NSRDF, Local: "Description"}
+	nameRDFID          = xml.Name{Space: NSRDF, Local: "ID"}
+	nameRDFLi          = xml.Name{Space: NSRDF, Local: "li"}
+	nameRDFNodeID      = xml.Name{Space: NSRDF, Local: "nodeID"}
+	nameRDFParseType   = xml.Name{Space: NSRDF, Local: "parseType"}
+	nameRDFResource    = xml.Name{Space: NSRDF, Local: "resource"}
+	nameRDFRoot        = xml.Name{Space: NSRDF, Local: "RDF"}
+	nameRDFSeq         = xml.Name{Space: NSRDF, Local: "Seq"}
+	nameRDFType        = xml.Name{Space: NSRDF, Local: "type"}
+	nameRDFValue       = xml.Name{Space: NSRDF, Local: "value"}
+	nameXMLLang        = xml.Name{Space: NSXML, Local: "lang"}
 
 	attrParseTypeResource = xml.Attr{Name: nameRDFParseType, Value: "Resource"}
 )

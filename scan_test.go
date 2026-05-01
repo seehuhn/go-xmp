@@ -18,6 +18,7 @@ package xmp
 
 import (
 	"bytes"
+	"errors"
 	"net/url"
 	"testing"
 )
@@ -39,7 +40,10 @@ func TestScan_SinglePacket(t *testing.T) {
 	p.SetValue(dcNS, "title", Text{V: "Hello"})
 	wrapped := encodePacket(t, p)
 
-	got := Scan(wrapped)
+	got, err := Scan(wrapped)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil packet")
 	}
@@ -69,7 +73,10 @@ func TestScan_PrefersDocumentLevel(t *testing.T) {
 	buf.Write(encodePacket(t, docPacket))
 	buf.Write([]byte("\ntrailer junk"))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil packet")
 	}
@@ -95,7 +102,10 @@ func TestScan_FallbackToFirstWhenNoneAreDocumentLevel(t *testing.T) {
 	buf.Write(encodePacket(t, first))
 	buf.Write(encodePacket(t, second))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil")
 	}
@@ -106,7 +116,10 @@ func TestScan_FallbackToFirstWhenNoneAreDocumentLevel(t *testing.T) {
 }
 
 func TestScan_NoPacketReturnsNil(t *testing.T) {
-	got := Scan([]byte("this file has no XMP whatsoever, just plain bytes"))
+	got, err := Scan([]byte("this file has no XMP whatsoever, just plain bytes"))
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got != nil {
 		t.Errorf("expected nil, got packet %+v", got)
 	}
@@ -114,7 +127,10 @@ func TestScan_NoPacketReturnsNil(t *testing.T) {
 
 func TestScan_TruncatedWrapperIsIgnored(t *testing.T) {
 	// begin sentinel without matching end
-	got := Scan([]byte(`prefix <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?> nothing more`))
+	got, err := Scan([]byte(`prefix <?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?> nothing more`))
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got != nil {
 		t.Errorf("expected nil for truncated wrapper, got %+v", got)
 	}
@@ -131,7 +147,10 @@ func TestScan_UTF16BE(t *testing.T) {
 	buf.Write(utf16Bytes)
 	buf.Write([]byte("\ntrailer"))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil for UTF-16BE wrapper")
 	}
@@ -152,7 +171,10 @@ func TestScan_UTF16LE(t *testing.T) {
 	buf.Write(utf16Bytes)
 	buf.Write([]byte("\ntrailer"))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil for UTF-16LE wrapper")
 	}
@@ -178,7 +200,10 @@ func TestScan_PrefersDocumentLevelAcrossEncodings(t *testing.T) {
 	buf.Write([]byte("\nbinary stream\n"))
 	buf.Write(encodePacket(t, docPacket))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil")
 	}
@@ -204,7 +229,10 @@ func TestScan_SkipsEmptyPacket(t *testing.T) {
 	buf.Write([]byte("\nbinary stream contents\n"))
 	buf.Write(encodePacket(t, realPacket))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil")
 	}
@@ -221,8 +249,12 @@ func TestScan_AllPacketsEmptyReturnsNil(t *testing.T) {
 	buf.Write([]byte("\n"))
 	buf.Write(encodePacket(t, NewPacket()))
 
-	if got := Scan(buf.Bytes()); got != nil {
+	got, err := Scan(buf.Bytes())
+	if got != nil {
 		t.Errorf("expected nil for all-empty input, got %+v", got)
+	}
+	if err != nil {
+		t.Errorf("expected nil error for all-empty input, got %v", err)
 	}
 }
 
@@ -237,8 +269,12 @@ func TestScan_RequiresMagicID(t *testing.T) {
 		`<dc:title>Not XMP</dc:title>` +
 		`</rdf:Description></rdf:RDF></x:xmpmeta>` +
 		`<?xpacket end="r"?>`)
-	if got := Scan(data); got != nil {
+	got, err := Scan(data)
+	if got != nil {
 		t.Errorf("expected nil (no magic ID), got %+v", got)
+	}
+	if err != nil {
+		t.Errorf("expected nil error (no magic ID), got %v", err)
 	}
 }
 
@@ -257,7 +293,10 @@ func TestScan_StrayXpacketBeforeRealWrapper(t *testing.T) {
 	buf.Write(encodePacket(t, p))
 	buf.WriteString(`<?xpacket end="r"?>`) // looks-like end PI from a different tool
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil; expected the real wrapper")
 	}
@@ -284,8 +323,15 @@ func TestScan_StopsAfterTooManyParseFailures(t *testing.T) {
 	}
 	buf.Write(encodePacket(t, p))
 
-	if got := Scan(buf.Bytes()); got != nil {
+	got, err := Scan(buf.Bytes())
+	if got != nil {
 		t.Errorf("Scan should have given up after the failure cap; got %+v", got)
+	}
+	if err == nil {
+		t.Error("expected non-nil error after exceeding failure cap")
+	}
+	if !errors.Is(err, ErrMalformed) {
+		t.Errorf("expected error to wrap ErrMalformed, got %v", err)
 	}
 }
 
@@ -304,7 +350,10 @@ func TestScan_EngulfedInnerWrapper(t *testing.T) {
 	buf.WriteString("\n<unclosed-tag\n") // unterminated start element
 	buf.Write(encodePacket(t, p))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil; expected the engulfed inner wrapper")
 	}
@@ -325,7 +374,10 @@ func TestScan_SingleQuotedID(t *testing.T) {
 		`<dc:title>SingleQuoted</dc:title>` +
 		`</rdf:Description></rdf:RDF></x:xmpmeta>` +
 		`<?xpacket end="r"?>`)
-	got := Scan(body)
+	got, err := Scan(body)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil for single-quoted id attribute")
 	}
@@ -348,7 +400,10 @@ func TestScan_MagicIDInPlainTextBeforeRealWrapper(t *testing.T) {
 	buf.WriteString("documentation: the magic XMP ID is " + xmpPacketID + "\n")
 	buf.Write(encodePacket(t, p))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("Scan returned nil; expected the real wrapper")
 	}
@@ -364,8 +419,12 @@ func TestScan_MagicIDOutsideProcInstIgnored(t *testing.T) {
 	// wrapper.  Even if it sits adjacent to an unrelated <?xpacket?>.
 	data := []byte(`<?xpacket begin="" id="other"?>noise` +
 		`?> not a PI ` + xmpPacketID + ` more text`)
-	if got := Scan(data); got != nil {
+	got, err := Scan(data)
+	if got != nil {
 		t.Errorf("expected nil (magic ID outside PI), got %+v", got)
+	}
+	if err != nil {
+		t.Errorf("expected nil error (magic ID outside PI), got %v", err)
 	}
 }
 
@@ -381,12 +440,35 @@ func TestScan_GarbageAroundValidWrapper(t *testing.T) {
 	buf.Write(wrapped)
 	buf.Write([]byte("\nendstream\n%%EOF"))
 
-	got := Scan(buf.Bytes())
+	got, err := Scan(buf.Bytes())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
 	if got == nil {
 		t.Fatal("expected packet found inside surrounding bytes")
 	}
 	v, _ := PacketGetValue[Text](got, dcNS, "title")
 	if v.V != "Anywhere" {
 		t.Errorf("got %q, want Anywhere", v.V)
+	}
+}
+
+// TestScan_MalformedWrapperReturnsError checks that Scan reports an
+// error when XMP-shaped wrappers are present but every parse fails.
+func TestScan_MalformedWrapperReturnsError(t *testing.T) {
+	// Properly bracketed begin/end wrapper, but the XML between is
+	// malformed (unclosed start tag, missing rdf:RDF).
+	data := []byte(`<?xpacket begin="" id="` + xmpPacketID + `"?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/"><not-closed` +
+		`<?xpacket end="r"?>`)
+	got, err := Scan(data)
+	if got != nil {
+		t.Errorf("expected nil packet for malformed wrapper, got %+v", got)
+	}
+	if err == nil {
+		t.Fatal("expected non-nil error for malformed wrapper")
+	}
+	if !errors.Is(err, ErrMalformed) {
+		t.Errorf("expected error to wrap ErrMalformed, got %v", err)
 	}
 }

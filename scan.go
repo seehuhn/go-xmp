@@ -18,6 +18,7 @@ package xmp
 
 import (
 	"bytes"
+	"errors"
 )
 
 // xmpPacketID is the fixed identifier required by ISO 16684-1
@@ -58,11 +59,20 @@ const maxScanParseFailures = 16
 // conveys no metadata and would otherwise spuriously match the
 // document-level case.
 //
-// Returns nil when no packet is found.  Malformed packets are skipped
-// silently, in keeping with the permissive-reader principle for
-// untrusted input.
-func Scan(data []byte) *Packet {
+// Scan returns:
+//   - (packet, nil) when at least one wrapper parsed successfully;
+//   - (nil, nil) when no wrapper was found in the input at all;
+//   - (nil, err) when one or more wrappers were located but every
+//     attempt to parse them failed.  In that case err is the
+//     [errors.Join] of all per-wrapper parse errors, each wrapping
+//     [ErrMalformed].
+//
+// Parse failures encountered while another wrapper later parses
+// successfully are silently dropped: the caller has the data they
+// wanted.
+func Scan(data []byte) (*Packet, error) {
 	var fallback *Packet
+	var errs []error
 	pos := 0
 	failures := 0
 	for pos < len(data) {
@@ -85,7 +95,7 @@ func Scan(data []byte) *Packet {
 		packet, err := Read(bytes.NewReader(data[bestStart:bestStop]))
 		if err == nil && packet != nil && len(packet.Properties) > 0 {
 			if packet.About == nil {
-				return packet
+				return packet, nil
 			}
 			if fallback == nil {
 				fallback = packet
@@ -93,6 +103,7 @@ func Scan(data []byte) *Packet {
 		}
 
 		if err != nil {
+			errs = append(errs, err)
 			failures++
 			if failures > maxScanParseFailures {
 				break
@@ -108,7 +119,10 @@ func Scan(data []byte) *Packet {
 		}
 	}
 
-	return fallback
+	if fallback != nil {
+		return fallback, nil
+	}
+	return nil, errors.Join(errs...)
 }
 
 // findWrapper locates the next XMP wrapper at or after pos, encoded
