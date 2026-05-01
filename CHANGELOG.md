@@ -58,6 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Localized.Set` now stores `x-default` values in the `Default`
   field rather than as a key in `V`, matching how the decoder
   reconstructs Lang Alt arrays.
+- `Localized` now treats `language.Und` as a synonym for `x-default`
+  in `Set`, `EncodeXMP`, `DecodeAnother`, and `Best`.  Calling code
+  should prefer `language.Und` over the parsed `x-default` tag.
 
 ## [0.7.1] (2026-03-31)
 

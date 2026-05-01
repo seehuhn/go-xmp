@@ -709,10 +709,14 @@ func (AlternativeArray[E]) DecodeAnother(val Raw) (Value, error) {
 // and tells readers which language to display when no better match is
 // available.  In this Go representation the x-default text lives in the
 // [Localized.Default] field, never as a key in [Localized.V].
+//
+// In all API entry points that take a [language.Tag], the zero value
+// [language.Und] is treated as a synonym for "x-default".  Prefer
+// [language.Und] over the parsed "x-default" tag in calling code.
 type Localized struct {
-	// V holds the per-language text entries.  The "x-default" tag
-	// must not appear as a key here; use [Localized.Default]
-	// instead.  Encoding a Localized whose V contains x-default
+	// V holds the per-language text entries.  Neither "x-default" nor
+	// [language.Und] may appear as a key here; use [Localized.Default]
+	// instead.  Encoding a Localized whose V contains either key
 	// returns an error wrapping [ErrInvalid].
 	V map[language.Tag]Text
 
@@ -724,11 +728,11 @@ type Localized struct {
 	Q
 }
 
-// Set stores the text value for a specific language.  Setting the value
-// for the special "x-default" tag updates [Localized.Default] instead of
-// adding a key to [Localized.V].
+// Set stores the text value for a specific language.  Passing
+// [language.Und] (or the parsed "x-default" tag) updates
+// [Localized.Default] instead of adding a key to [Localized.V].
 func (l *Localized) Set(lang language.Tag, txt string, qualifiers ...Qualifier) {
-	if lang == defaultLanguage {
+	if isDefaultLang(lang) {
 		l.Default = NewText(txt, qualifiers...)
 		return
 	}
@@ -745,10 +749,20 @@ func (l Localized) IsZero() bool {
 
 var defaultLanguage = language.MustParse("x-default")
 
+// isDefaultLang reports whether tag denotes the XMP "x-default" item.
+// Both the parsed "x-default" tag and [language.Und] (the zero tag) are
+// accepted; library code uses this in every place that distinguishes
+// "the default item" from a real per-language entry.
+func isDefaultLang(tag language.Tag) bool {
+	return tag == defaultLanguage || tag == language.Und
+}
+
 // EncodeXMP implements the [Value] interface.
 func (l Localized) EncodeXMP(*Packet) (Raw, error) {
-	if _, ok := l.V[defaultLanguage]; ok {
-		return nil, fmt.Errorf("xmp: Localized.V contains x-default key: %w", ErrInvalid)
+	for k := range l.V {
+		if isDefaultLang(k) {
+			return nil, fmt.Errorf("xmp: Localized.V contains x-default key: %w", ErrInvalid)
+		}
 	}
 
 	var vals []Raw
@@ -797,7 +811,7 @@ func (Localized) DecodeAnother(val Raw) (Value, error) {
 			return nil, ErrInvalid
 		}
 		lang, Q := v.Q.StripLanguage()
-		if lang == defaultLanguage {
+		if isDefaultLang(lang) {
 			res.Default = Text{V: v.V, Q: Q}
 		} else {
 			res.V[lang] = Text{V: v.V, Q: Q}
@@ -809,11 +823,12 @@ func (Localized) DecodeAnother(val Raw) (Value, error) {
 // Best returns the text value most appropriate for the requested
 // language.  It picks the best reasonable match for lang from
 // [Localized.V] using [language.Matcher]; if no entry is a reasonable
-// match (or lang is [language.Und]), it returns [Localized.Default].
-// Returns "" when neither a reasonable match nor a default is
-// available.
+// match (or lang denotes the default item), it returns
+// [Localized.Default].  Both [language.Und] and the parsed "x-default"
+// tag select the default directly.  Returns "" when neither a
+// reasonable match nor a default is available.
 func (l Localized) Best(lang language.Tag) string {
-	if len(l.V) > 0 && lang != language.Und {
+	if len(l.V) > 0 && !isDefaultLang(lang) {
 		// sort tags so the matcher's tie-break is deterministic
 		tags := make([]language.Tag, 0, len(l.V))
 		for t := range l.V {

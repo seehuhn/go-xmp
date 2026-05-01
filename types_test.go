@@ -112,6 +112,7 @@ func TestLocalizedBest(t *testing.T) {
 		{"American English matches English", language.AmericanEnglish, "English Title"},
 		{"unknown language falls back to default", language.Japanese, "Default Title"},
 		{"undefined falls back to default", language.Und, "Default Title"},
+		{"x-default tag returns default", language.MustParse("x-default"), "Default Title"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -152,21 +153,35 @@ func TestLocalizedBest(t *testing.T) {
 	}
 }
 
-// TestLocalizedSet checks that Set routes "x-default" to Default and
-// other languages to V.
+// TestLocalizedSet checks that Set routes both the parsed "x-default"
+// tag and [language.Und] to [Localized.Default], and that other
+// languages land in V.
 func TestLocalizedSet(t *testing.T) {
-	var loc Localized
-	loc.Set(language.MustParse("x-default"), "Hello")
-	loc.Set(language.German, "Hallo")
+	for _, tc := range []struct {
+		name string
+		lang language.Tag
+	}{
+		{"x-default", language.MustParse("x-default")},
+		{"language.Und", language.Und},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var loc Localized
+			loc.Set(tc.lang, "Hello")
+			loc.Set(language.German, "Hallo")
 
-	if loc.Default.V != "Hello" {
-		t.Errorf("Default: got %q, want %q", loc.Default.V, "Hello")
-	}
-	if _, ok := loc.V[language.MustParse("x-default")]; ok {
-		t.Errorf("V should not contain an x-default key")
-	}
-	if loc.V[language.German].V != "Hallo" {
-		t.Errorf("V[de]: got %q, want %q", loc.V[language.German].V, "Hallo")
+			if loc.Default.V != "Hello" {
+				t.Errorf("Default: got %q, want %q", loc.Default.V, "Hello")
+			}
+			if _, ok := loc.V[language.MustParse("x-default")]; ok {
+				t.Errorf("V should not contain an x-default key")
+			}
+			if _, ok := loc.V[language.Und]; ok {
+				t.Errorf("V should not contain a language.Und key")
+			}
+			if loc.V[language.German].V != "Hallo" {
+				t.Errorf("V[de]: got %q, want %q", loc.V[language.German].V, "Hallo")
+			}
+		})
 	}
 }
 
@@ -219,21 +234,32 @@ func TestSetValueInvalidEncodes(t *testing.T) {
 }
 
 // TestLocalizedEncodeRejectsXDefaultInV checks that the encoder
-// refuses to encode a Localized that has the x-default key in V,
-// rather than silently fixing it up.
+// refuses to encode a Localized whose V map contains either the
+// "x-default" tag or [language.Und] (both denote the default item and
+// belong in [Localized.Default]), rather than silently fixing it up.
 func TestLocalizedEncodeRejectsXDefaultInV(t *testing.T) {
-	loc := Localized{
-		V: map[language.Tag]Text{
-			defaultLanguage: NewText("Stray"),
-			language.German: NewText("Hallo"),
-		},
-	}
-	_, err := loc.EncodeXMP(nil)
-	if err == nil {
-		t.Fatal("EncodeXMP: expected error, got nil")
-	}
-	if !errors.Is(err, ErrInvalid) {
-		t.Errorf("error %v does not wrap ErrInvalid", err)
+	for _, tc := range []struct {
+		name string
+		key  language.Tag
+	}{
+		{"x-default", defaultLanguage},
+		{"language.Und", language.Und},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			loc := Localized{
+				V: map[language.Tag]Text{
+					tc.key:          NewText("Stray"),
+					language.German: NewText("Hallo"),
+				},
+			}
+			_, err := loc.EncodeXMP(nil)
+			if err == nil {
+				t.Fatal("EncodeXMP: expected error, got nil")
+			}
+			if !errors.Is(err, ErrInvalid) {
+				t.Errorf("error %v does not wrap ErrInvalid", err)
+			}
+		})
 	}
 }
 
@@ -260,6 +286,34 @@ func TestLocalizedDecodeRoutesXDefault(t *testing.T) {
 	}
 	if _, ok := loc.V[defaultLanguage]; ok {
 		t.Errorf("V must not contain an x-default key after decode")
+	}
+	if loc.V[language.German].V != "Hallo" {
+		t.Errorf("V[de]: got %q, want %q", loc.V[language.German].V, "Hallo")
+	}
+}
+
+// TestLocalizedDecodeRoutesUnd checks that decoding a Lang Alt array
+// also routes a `xml:lang="und"` entry into [Localized.Default]: the
+// library treats [language.Und] as a synonym for x-default everywhere.
+func TestLocalizedDecodeRoutesUnd(t *testing.T) {
+	raw := RawArray{
+		Kind: Alternative,
+		Value: []Raw{
+			Text{V: "Hello", Q: Q{{Name: nameXMLLang, Value: Text{V: "und"}}}},
+			Text{V: "Hallo", Q: Q{{Name: nameXMLLang, Value: Text{V: "de"}}}},
+		},
+	}
+	v, err := Localized{}.DecodeAnother(raw)
+	if err != nil {
+		t.Fatalf("DecodeAnother: %v", err)
+	}
+	loc := v.(Localized)
+
+	if loc.Default.V != "Hello" {
+		t.Errorf("Default: got %q, want %q", loc.Default.V, "Hello")
+	}
+	if _, ok := loc.V[language.Und]; ok {
+		t.Errorf("V must not contain a language.Und key after decode")
 	}
 	if loc.V[language.German].V != "Hallo" {
 		t.Errorf("V[de]: got %q, want %q", loc.V[language.German].V, "Hallo")
