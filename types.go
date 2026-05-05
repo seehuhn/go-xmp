@@ -292,17 +292,55 @@ func (Integer) DecodeAnother(val Raw) (Value, error) {
 type Date struct {
 	V time.Time
 
-	// NumOmitted can be used to reduce the precision of the date
-	// when serializing it to XMP.  The value is a number between 0 and 5:
-	// 1=omit nano, 2=omit sec, 3=omit time, 4=omit day, 5=month.
-	NumOmitted int
+	// Precision controls how much of V is written when serializing
+	// to XMP.  The zero value [PrecisionFull] keeps full nanosecond
+	// precision; larger values progressively drop trailing components.
+	Precision DatePrecision
 
 	Q
 }
 
-// NewDate creates a new XMP date value.
-func NewDate(t time.Time, qualifiers ...Qualifier) Date {
-	return Date{V: t, Q: Q(qualifiers)}
+// DatePrecision selects the level of detail kept when a [Date] is
+// serialized to XMP.
+type DatePrecision int
+
+// The supported precision levels, ordered from most to least detail.
+const (
+	PrecisionFull   DatePrecision = iota // full nanosecond precision
+	PrecisionSecond                      // truncate to whole seconds
+	PrecisionMinute                      // truncate to whole minutes
+	PrecisionDay                         // drop the time of day
+	PrecisionMonth                       // keep year and month only
+	PrecisionYear                        // keep year only
+)
+
+// String returns the constant name for p, or a numeric form for
+// out-of-range values.
+func (p DatePrecision) String() string {
+	switch p {
+	case PrecisionFull:
+		return "PrecisionFull"
+	case PrecisionSecond:
+		return "PrecisionSecond"
+	case PrecisionMinute:
+		return "PrecisionMinute"
+	case PrecisionDay:
+		return "PrecisionDay"
+	case PrecisionMonth:
+		return "PrecisionMonth"
+	case PrecisionYear:
+		return "PrecisionYear"
+	}
+	return fmt.Sprintf("DatePrecision(%d)", int(p))
+}
+
+// NewDate creates a new XMP date value with the given precision.
+// For round-trip stability, p should match the resolution of t:
+// pass [PrecisionSecond] only when t.Nanosecond() == 0, and pass a
+// coarser precision only when the corresponding components of t are
+// zero.  Components of t below p are dropped on encode.
+func NewDate(t time.Time, p DatePrecision, qualifiers ...Qualifier) Date {
+	return Date{V: t, Precision: p, Q: Q(qualifiers)}
 }
 
 // IsZero implements the [Value] interface.
@@ -310,14 +348,30 @@ func (d Date) IsZero() bool {
 	return d.V.IsZero() && len(d.Q) == 0
 }
 
-// EncodeXMP implements the [Value] interface.
+// String returns d.V formatted as ISO 8601, truncated to the level
+// indicated by d.Precision.  The result is the canonical XMP
+// serialization produced by [Date.EncodeXMP].  A zero d.V yields "";
+// an out-of-range d.Precision is clamped to the nearest defined
+// constant.
+func (d Date) String() string {
+	if d.V.IsZero() {
+		return ""
+	}
+	p := min(max(d.Precision, PrecisionFull), PrecisionYear)
+	return d.V.Format(dateEncodeFormats[p])
+}
+
+// EncodeXMP implements the [Value] interface.  It returns an error
+// wrapping [ErrInvalid] if d.Precision is not one of the defined
+// [DatePrecision] constants.  ([Date.String] is more lenient: it
+// clamps an out-of-range Precision so that fmt-style debug output
+// stays panic-free.)
 func (d Date) EncodeXMP(*Packet) (Raw, error) {
-	numOmitted := d.NumOmitted
-	numOmitted = min(numOmitted, len(dateFormats)-1)
-	numOmitted = max(numOmitted, 0)
-	format := dateFormats[numOmitted]
+	if d.Precision < PrecisionFull || d.Precision > PrecisionYear {
+		return nil, fmt.Errorf("xmp: Date.Precision %s: %w", d.Precision, ErrInvalid)
+	}
 	return Text{
-		V: d.V.Format(format),
+		V: d.String(),
 		Q: d.Q,
 	}, nil
 }
@@ -328,29 +382,83 @@ func (Date) DecodeAnother(val Raw) (Value, error) {
 	if !ok {
 		return nil, ErrInvalid
 	}
-	dateString := v.V
-
-	for i, format := range dateFormats {
-		t, err := time.Parse(format, dateString)
-		if err == nil {
-			val := Date{
-				V:          t,
-				NumOmitted: i,
-				Q:          v.Q,
-			}
-			return val, nil
-		}
+	p, ok := datePrecisionFromString(v.V)
+	if !ok {
+		return nil, ErrInvalid
 	}
-	return nil, ErrInvalid
+	t, err := time.Parse(dateParseFormats[p], v.V)
+	if err != nil {
+		return nil, ErrInvalid
+	}
+	return Date{V: t, Precision: p, Q: v.Q}, nil
 }
 
-var dateFormats = []string{
-	"2006-01-02T15:04:05.999999999Z07:00",
-	"2006-01-02T15:04:05Z07:00",
-	"2006-01-02T15:04Z07:00",
-	"2006-01-02",
-	"2006-01",
-	"2006",
+// datePrecisionFromString returns the precision corresponding to the
+// structure of s, or false if s is not shaped like an XMP date.  The
+// result is determined by the components present in s without parsing
+// the numeric fields.
+func datePrecisionFromString(s string) (DatePrecision, bool) {
+	switch len(s) {
+	case 4:
+		return PrecisionYear, true
+	case 7:
+		return PrecisionMonth, true
+	case 10:
+		return PrecisionDay, true
+	}
+	if len(s) < 17 || s[10] != 'T' {
+		return 0, false
+	}
+	// Locate the timezone marker after HH:MM[:SS[.fff]].  The fractional
+	// seconds part contains only digits and '.', so the first Z, '+' or
+	// '-' encountered after the time portion starts the timezone.
+	tzAt := -1
+	for i := 11; i < len(s); i++ {
+		if c := s[i]; c == 'Z' || c == '+' || c == '-' {
+			tzAt = i
+			break
+		}
+	}
+	if tzAt < 0 {
+		return 0, false
+	}
+	timeOnly := s[11:tzAt]
+	switch strings.Count(timeOnly, ":") {
+	case 1:
+		return PrecisionMinute, true
+	case 2:
+		if strings.Contains(timeOnly, ".") {
+			return PrecisionFull, true
+		}
+		return PrecisionSecond, true
+	}
+	return 0, false
+}
+
+// dateEncodeFormats holds the [time] package layout strings used to
+// emit a canonical XMP date.  PrecisionFull uses ".000000000" so the
+// fractional-second component is always present, which keeps a
+// Decode/Encode/Decode cycle idempotent for inputs that contained
+// explicit zero fractional seconds.
+var dateEncodeFormats = []string{
+	PrecisionFull:   "2006-01-02T15:04:05.000000000Z07:00",
+	PrecisionSecond: "2006-01-02T15:04:05Z07:00",
+	PrecisionMinute: "2006-01-02T15:04Z07:00",
+	PrecisionDay:    "2006-01-02",
+	PrecisionMonth:  "2006-01",
+	PrecisionYear:   "2006",
+}
+
+// dateParseFormats holds the [time] package layout strings used to
+// parse XMP dates.  PrecisionFull uses ".999999999" so that any
+// number of fractional-second digits is accepted on input.
+var dateParseFormats = []string{
+	PrecisionFull:   "2006-01-02T15:04:05.999999999Z07:00",
+	PrecisionSecond: "2006-01-02T15:04:05Z07:00",
+	PrecisionMinute: "2006-01-02T15:04Z07:00",
+	PrecisionDay:    "2006-01-02",
+	PrecisionMonth:  "2006-01",
+	PrecisionYear:   "2006",
 }
 
 // Locale represents a language code.

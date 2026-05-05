@@ -29,7 +29,7 @@ import (
 
 func TestTag(t *testing.T) {
 	dc1 := &DublinCore{}
-	dc1.Date.Append(NewDate(time.Now()))
+	dc1.Date.Append(NewDate(time.Now(), PrecisionFull))
 	dc1.Title.Set(language.English, "Hello, World!")
 	dc1.Title.Set(language.German, "Grüß Gott!")
 	dc1.Title.Default = NewText("Hello, World!")
@@ -60,7 +60,7 @@ func TestRoundTripDublinCore(t *testing.T) {
 	in.Contributor.Append(NewProperName("Alice"))
 	in.Contributor.Append(NewProperName("Bob"))
 	in.Creator.Append(NewProperName("Carol"))
-	in.Date.Append(NewDate(time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)))
+	in.Date.Append(NewDate(time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC), PrecisionSecond))
 	in.Description.Set(language.English, "an example")
 	in.Language.Append(NewLocale(language.English))
 	in.Publisher.Append(NewProperName("Acme"))
@@ -77,11 +77,11 @@ func TestRoundTripDublinCore(t *testing.T) {
 
 func TestRoundTripBasic(t *testing.T) {
 	in := &Basic{
-		CreateDate:   NewDate(time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC)),
+		CreateDate:   NewDate(time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC), PrecisionSecond),
 		CreatorTool:  NewAgentName("Acme Editor 1.0"),
 		Label:        NewText("draft"),
-		MetadataDate: NewDate(time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC)),
-		ModifyDate:   NewDate(time.Date(2024, 6, 7, 8, 9, 11, 0, time.UTC)),
+		MetadataDate: NewDate(time.Date(2024, 6, 7, 8, 9, 10, 0, time.UTC), PrecisionSecond),
+		ModifyDate:   NewDate(time.Date(2024, 6, 7, 8, 9, 11, 0, time.UTC), PrecisionSecond),
 		Rating:       Real{V: 4},
 	}
 	in.Identifier.V = []Text{NewText("urn:example:1")}

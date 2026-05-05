@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   by the XMP property-name rules.
 - `Localized.Best` method, returning the best language match in the
   packet (or `Default` when no reasonable match exists).
+- `Date` has a new `String` method returning its canonical XMP
+  serialization (truncated according to `Date.Precision`).  It
+  returns `""` for a zero `V` and clamps an out-of-range
+  `Precision` so that fmt-style formatting stays panic-free.
 
 ### Fixed
 - `xmlns` declarations on a property element no longer affect how the
@@ -61,6 +65,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Localized` now treats `language.Und` as a synonym for `x-default`
   in `Set`, `EncodeXMP`, `DecodeAnother`, and `Best`.  Calling code
   should prefer `language.Und` over the parsed `x-default` tag.
+- `Date.NumOmitted int` is replaced by `Date.Precision DatePrecision`,
+  with named constants `PrecisionFull`, `PrecisionSecond`,
+  `PrecisionMinute`, `PrecisionDay`, `PrecisionMonth`, and
+  `PrecisionYear`.
+- `NewDate` now takes the precision as a required second argument:
+  `NewDate(t time.Time, p DatePrecision, qualifiers ...Qualifier)`.
+- `Date.EncodeXMP` rejects an out-of-range `Precision` with an error
+  wrapping `ErrInvalid`.
+- The canonical encoding of a `PrecisionFull` value now always emits
+  nine fractional-second digits, so a Decode/Encode/Decode cycle is
+  idempotent for inputs containing explicit zero fractional seconds.
 
 ## [0.7.1] (2026-03-31)
 

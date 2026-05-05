@@ -21,6 +21,7 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 
 	"golang.org/x/text/language"
 
@@ -90,6 +91,120 @@ func TestInteger(t *testing.T) {
 	}
 	if d := cmp.Diff(C, D); d != "" {
 		t.Errorf("C and D are different (-want +got):\n%s", d)
+	}
+}
+
+// TestDateString checks that [Date.String] emits ISO 8601 truncated
+// to the level indicated by [Date.Precision].
+func TestDateString(t *testing.T) {
+	base := time.Date(2024, 5, 1, 13, 30, 45, 123456789, time.UTC)
+
+	cases := []struct {
+		p    DatePrecision
+		want string
+	}{
+		{PrecisionFull, "2024-05-01T13:30:45.123456789Z"},
+		{PrecisionSecond, "2024-05-01T13:30:45Z"},
+		{PrecisionMinute, "2024-05-01T13:30Z"},
+		{PrecisionDay, "2024-05-01"},
+		{PrecisionMonth, "2024-05"},
+		{PrecisionYear, "2024"},
+	}
+	for _, tc := range cases {
+		d := Date{V: base, Precision: tc.p}
+		if got := d.String(); got != tc.want {
+			t.Errorf("%s: String() = %q, want %q", tc.p, got, tc.want)
+		}
+	}
+}
+
+// TestDateStringZero verifies that the zero [Date.V] yields "" rather
+// than a formatted "0001-01-01..." string, so callers can rely on
+// String for empty-or-not handling.
+func TestDateStringZero(t *testing.T) {
+	if got := (Date{}).String(); got != "" {
+		t.Errorf("Date{}.String() = %q, want %q", got, "")
+	}
+	// non-zero V must still format even with no Q
+	d := Date{V: time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC), Precision: PrecisionDay}
+	if got := d.String(); got != "2024-05-01" {
+		t.Errorf("non-zero Date.String() = %q, want %q", got, "2024-05-01")
+	}
+}
+
+// TestDateRoundTrip checks that a canonical Date — one whose V
+// resolution matches Precision — survives String → DecodeAnother
+// unchanged.
+func TestDateRoundTrip(t *testing.T) {
+	utc := time.UTC
+	plus530 := time.FixedZone("+05:30", 5*3600+30*60)
+
+	cases := []struct {
+		name string
+		in   Date
+	}{
+		{"full precision UTC", Date{V: time.Date(2024, 5, 1, 13, 30, 45, 123456789, utc), Precision: PrecisionFull}},
+		{"sub-second only", Date{V: time.Date(2024, 5, 1, 13, 30, 45, 500000000, utc), Precision: PrecisionFull}},
+		{"full precision with zero nanos", Date{V: time.Date(2024, 5, 1, 13, 30, 45, 0, utc), Precision: PrecisionFull}},
+		{"full precision +05:30", Date{V: time.Date(2024, 5, 1, 13, 30, 45, 123000000, plus530), Precision: PrecisionFull}},
+		{"second UTC", Date{V: time.Date(2024, 5, 1, 13, 30, 45, 0, utc), Precision: PrecisionSecond}},
+		{"second +05:30", Date{V: time.Date(2024, 5, 1, 13, 30, 45, 0, plus530), Precision: PrecisionSecond}},
+		{"minute", Date{V: time.Date(2024, 5, 1, 13, 30, 0, 0, utc), Precision: PrecisionMinute}},
+		{"day", Date{V: time.Date(2024, 5, 1, 0, 0, 0, 0, utc), Precision: PrecisionDay}},
+		{"month", Date{V: time.Date(2024, 5, 1, 0, 0, 0, 0, utc), Precision: PrecisionMonth}},
+		{"year", Date{V: time.Date(2024, 1, 1, 0, 0, 0, 0, utc), Precision: PrecisionYear}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s := tc.in.String()
+			out, err := Date{}.DecodeAnother(Text{V: s})
+			if err != nil {
+				t.Fatalf("DecodeAnother(%q): %v", s, err)
+			}
+			got := out.(Date)
+			if !got.V.Equal(tc.in.V) {
+				t.Errorf("V: got %v, want %v (via %q)", got.V, tc.in.V, s)
+			}
+			if got.Precision != tc.in.Precision {
+				t.Errorf("Precision: got %s, want %s (via %q)", got.Precision, tc.in.Precision, s)
+			}
+		})
+	}
+}
+
+// TestDateEncodeXMPRejectsInvalidPrecision verifies that
+// [Date.EncodeXMP] reports an out-of-range Precision as
+// [ErrInvalid] rather than silently clamping it like [Date.String].
+func TestDateEncodeXMPRejectsInvalidPrecision(t *testing.T) {
+	base := time.Date(2024, 5, 1, 13, 30, 45, 0, time.UTC)
+	for _, p := range []DatePrecision{-1, PrecisionYear + 1, 99} {
+		_, err := Date{V: base, Precision: p}.EncodeXMP(nil)
+		if !errors.Is(err, ErrInvalid) {
+			t.Errorf("Precision=%s: err=%v, want errors.Is(err, ErrInvalid)", p, err)
+		}
+	}
+}
+
+// TestDateStringClampsInvalidPrecision verifies that out-of-range
+// [DatePrecision] values are clamped to the nearest defined constant
+// rather than panicking, since [Date.String] is implicitly invoked by
+// the fmt package.
+func TestDateStringClampsInvalidPrecision(t *testing.T) {
+	base := time.Date(2024, 5, 1, 13, 30, 45, 123456789, time.UTC)
+
+	cases := []struct {
+		p    DatePrecision
+		want string
+	}{
+		{-1, "2024-05-01T13:30:45.123456789Z"}, // clamps to PrecisionFull
+		{PrecisionYear + 1, "2024"},            // clamps to PrecisionYear
+		{99, "2024"},                           // clamps to PrecisionYear
+	}
+	for _, tc := range cases {
+		got := Date{V: base, Precision: tc.p}.String()
+		if got != tc.want {
+			t.Errorf("Precision=%s: String() = %q, want %q", tc.p, got, tc.want)
+		}
 	}
 }
 
