@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("\ufeff<rdf:RDF A=\"\"xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description A=\"\"><test:prop A000000000000=\"00000000\"><rdf:value>0</rdf:value>000000000000000000000000000000000000000000</test:prop></rdf:Description></rdf:RDF>0<?xpacket end=\"w\"?>")

@@ -42,8 +42,10 @@ import (
 // If the input ends with the writable XMP packet trailer
 // <?xpacket end="w"?>, [Packet.PadToLength] of the returned packet is
 // set to the total number of input bytes consumed (covering the packet
-// content plus any trailing whitespace padding); see the field doc on
-// [Packet] for details.
+// content plus any trailing whitespace padding), so an unmodified
+// round-trip fits the same segment.  If that byte count is too small
+// to hold a re-emission of the parsed packet, PadToLength is left at
+// 0.  See the field doc on [Packet] for details.
 func Read(r io.Reader) (*Packet, error) {
 	pr, err := newPacketReader(r)
 	if err != nil {
@@ -155,7 +157,16 @@ tokenLoop:
 	}
 
 	if trailer == "w" {
-		p.PadToLength = pr.nRead
+		// Only honour the writable trailer if a full re-emission of the
+		// parsed Packet actually fits in pr.nRead bytes.  Without this
+		// check, malformed input (e.g. a bare end PI with no body) would
+		// poison the returned Packet with a PadToLength too small for
+		// the encoder's irreducible scaffolding, breaking every later
+		// Write call.
+		cw := &countingWriter{w: io.Discard}
+		if err := p.Write(cw, nil); err == nil && cw.n <= pr.nRead {
+			p.PadToLength = pr.nRead
+		}
 	}
 	return p, nil
 }

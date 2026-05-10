@@ -823,6 +823,37 @@ func TestRead_PadToLengthWritable(t *testing.T) {
 	}
 }
 
+func TestRead_PadToLengthTooSmall(t *testing.T) {
+	// Inputs short enough that pr.nRead is below the encoder's
+	// irreducible scaffolding: the writable trailer must be ignored,
+	// otherwise Write would later fail with ErrPacketTooLong.
+	cases := []struct {
+		name, body string
+	}{
+		{"trailer-only-double-quote", `<?xpacket end="w"?>`},
+		{"trailer-only-single-quote", `<?xpacket end='w'?>`},
+		{"leading-space", ` <?xpacket end="w"?>`},
+		{"begin-and-trailer-no-content",
+			`<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?>` +
+				`<?xpacket end="w"?>`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := Read(strings.NewReader(tc.body))
+			if err != nil {
+				t.Fatalf("Read: %v", err)
+			}
+			if p.PadToLength != 0 {
+				t.Errorf("PadToLength = %d, want 0", p.PadToLength)
+			}
+			// the returned Packet must be writable
+			if err := p.Write(&bytes.Buffer{}, nil); err != nil {
+				t.Errorf("Write of Read result: %v", err)
+			}
+		})
+	}
+}
+
 func TestRead_PadToLengthBeginPISmuggle(t *testing.T) {
 	// A malformed begin PI whose id value contains the substring
 	// `end="w"`.  No closing xpacket PI follows.  PadToLength must

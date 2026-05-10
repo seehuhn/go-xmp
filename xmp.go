@@ -47,8 +47,9 @@ type Packet struct {
 	// content does not fit.
 	//
 	// [Read] sets PadToLength to the source byte count when the input
-	// used a writable trailer, so an unmodified round-trip fits the
-	// same segment.
+	// used a writable trailer and that count is large enough to hold a
+	// re-emission of the parsed packet, so an unmodified round-trip
+	// fits the same segment.  Otherwise PadToLength is left at 0.
 	PadToLength int
 
 	nsToPrefix map[string]string
