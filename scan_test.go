@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net/url"
 	"testing"
+	"time"
 )
 
 const dcNS = "http://purl.org/dc/elements/1.1/"
@@ -450,6 +451,37 @@ func TestScan_GarbageAroundValidWrapper(t *testing.T) {
 	v, _ := PacketGetValue[Text](got, dcNS, "title")
 	if v.V != "Anywhere" {
 		t.Errorf("got %q, want Anywhere", v.V)
+	}
+}
+
+// TestScan_LinearOnAdversarialIDs guards against quadratic blow-up in
+// findWrapper.  An earlier version called bytes.LastIndex(data[:idAt],
+// "<?xpacket") for every id-attribute candidate, walking the entire
+// prefix on each iteration.  An attacker-controlled buffer of bare
+// id="..." matches with no <?xpacket anywhere then made Scan
+// Θ(n²)-time: 25 K bare ids in ~730 KiB took over ten seconds.  With
+// linear behaviour the same input completes in milliseconds.
+func TestScan_LinearOnAdversarialIDs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping CPU-time regression test in -short mode")
+	}
+	const id = `id="` + xmpPacketID + `"`
+	data := bytes.Repeat([]byte(id+" "), 50000)
+
+	const limit = time.Second
+	start := time.Now()
+	got, err := Scan(data)
+	elapsed := time.Since(start)
+
+	if got != nil {
+		t.Errorf("expected nil packet for adversarial input, got %+v", got)
+	}
+	if err != nil {
+		t.Errorf("expected nil error for adversarial input, got %v", err)
+	}
+	if elapsed > limit {
+		t.Fatalf("Scan on %d-byte adversarial input took %v, want < %v (quadratic regression?)",
+			len(data), elapsed, limit)
 	}
 }
 

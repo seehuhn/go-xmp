@@ -19,6 +19,7 @@ package xmp
 import (
 	"bytes"
 	"errors"
+	"sort"
 )
 
 // xmpPacketID is the fixed identifier required by ISO 16684-1
@@ -71,6 +72,18 @@ const maxScanParseFailures = 16
 // successfully are silently dropped: the caller has the data they
 // wanted.
 func Scan(data []byte) (*Packet, error) {
+	// Precompute, per encoding, the sorted positions of every
+	// "<?xpacket" and "?>" in the input.  findWrapper consults these
+	// via binary search to decide whether each id-attribute candidate
+	// lies inside an open <?xpacket ... ?> PI; without precomputation
+	// the per-candidate prefix walk is Θ(n²) on adversarial input.
+	xpacketStarts := make([][]int, len(scanPatterns))
+	closes := make([][]int, len(scanPatterns))
+	for i, p := range scanPatterns {
+		xpacketStarts[i] = allOccurrences(data, p.xpacket)
+		closes[i] = allOccurrences(data, p.close)
+	}
+
 	var fallback *Packet
 	var errs []error
 	pos := 0
@@ -78,8 +91,8 @@ func Scan(data []byte) (*Packet, error) {
 	for pos < len(data) {
 		bestStart, bestStop, bestIDAt := -1, -1, -1
 		var bestPattern scanPattern
-		for _, p := range scanPatterns {
-			start, stop, idAt, ok := findWrapper(data, pos, p)
+		for i, p := range scanPatterns {
+			start, stop, idAt, ok := findWrapper(data, pos, p, xpacketStarts[i], closes[i])
 			if !ok {
 				continue
 			}
@@ -137,7 +150,14 @@ func Scan(data []byte) (*Packet, error) {
 // id="W5M0..." in CharData), the search advances past it and tries
 // the next occurrence — otherwise a stray match before a real wrapper
 // would mask the wrapper.
-func findWrapper(data []byte, pos int, p scanPattern) (start, stop, idAt int, ok bool) {
+//
+// xpacketStarts and closes are sorted positions of "<?xpacket" and
+// "?>" across the entire data, precomputed once by Scan so the
+// per-candidate "is the id inside an open <?xpacket ?> PI?" check is
+// O(log n) rather than O(n).  An earlier implementation called
+// bytes.LastIndex(data[:idAt], p.xpacket) per candidate, making
+// adversarial input full of bare id matches Θ(n²).
+func findWrapper(data []byte, pos int, p scanPattern, xpacketStarts, closes []int) (start, stop, idAt int, ok bool) {
 	for pos < len(data) {
 		idIdx := bytes.Index(data[pos:], p.id)
 		if idIdx < 0 {
@@ -145,13 +165,19 @@ func findWrapper(data []byte, pos int, p scanPattern) (start, stop, idAt int, ok
 		}
 		idAt = pos + idIdx
 
-		// The id attribute must lie inside <?xpacket ... ?>.  Walk
-		// back to the nearest "<?xpacket" before idAt; if a closing
-		// "?>" separates them, the attribute is outside the PI and
-		// this candidate is rejected.  Skip past it and try the next
+		// The id attribute must lie inside <?xpacket ... ?>.  Find
+		// the nearest "<?xpacket" before idAt; if a closing "?>"
+		// separates them, the attribute is outside the PI and this
+		// candidate is rejected.  Skip past it and try the next
 		// match.
-		wrapperStart := bytes.LastIndex(data[:idAt], p.xpacket)
-		if wrapperStart < 0 || bytes.Contains(data[wrapperStart:idAt], p.close) {
+		xi := sort.SearchInts(xpacketStarts, idAt) - 1
+		if xi < 0 {
+			pos = idAt + len(p.id)
+			continue
+		}
+		wrapperStart := xpacketStarts[xi]
+		ci := sort.SearchInts(closes, wrapperStart)
+		if ci < len(closes) && closes[ci]+len(p.close) <= idAt {
 			pos = idAt + len(p.id)
 			continue
 		}
@@ -175,6 +201,24 @@ func findWrapper(data []byte, pos int, p scanPattern) (start, stop, idAt int, ok
 		return wrapperStart, endStart + endCloseRel + len(p.close), idAt, true
 	}
 	return 0, 0, 0, false
+}
+
+// allOccurrences returns all positions in data at which pattern
+// starts, in ascending order.  Empty patterns yield nil.
+func allOccurrences(data, pattern []byte) []int {
+	if len(pattern) == 0 {
+		return nil
+	}
+	var out []int
+	off := 0
+	for {
+		i := bytes.Index(data[off:], pattern)
+		if i < 0 {
+			return out
+		}
+		out = append(out, off+i)
+		off += i + 1
+	}
 }
 
 // scanPattern holds the byte-level form of the wrapper sentinels in
