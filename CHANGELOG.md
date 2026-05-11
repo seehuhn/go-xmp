@@ -5,9 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.7.2] (2026-05-11)
 
 ### Added
+- `Scan` function that locates an XMP packet wrapper inside arbitrary
+  host bytes, preferring the document-level packet (`rdf:about=""`).
+- `Read` accepts UTF-16BE and UTF-16LE input (with or without BOM) in
+  addition to UTF-8, and enforces a 16 MiB cap on packet size.
+- `Packet.PadToLength` field requests trailing whitespace padding so
+  the encoded packet reaches a fixed byte length.  When set, the
+  trailer switches from `end="r"` to `end="w"` to mark the packet as
+  in-place editable, and `Read` records the source byte count so an
+  unmodified round-trip refits the original host-file segment.
 - `PDF` namespace model for the Adobe PDF namespace
   (`http://ns.adobe.com/pdf/1.3/`), with fields `Keywords`, `PDFVersion`,
   `Producer`, and `Trapped`.
@@ -25,21 +34,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `NSPDFX`, `NSPDFXID`, `NSResourceRef`, `NSXML`, `NSRDF`).
 - `PropertyError` type identifying which property failed to decode
   during a `Packet.Get` call.
-- `ErrInvalidName` sentinel error returned (wrapped) by
-  `Packet.SetValue` when the namespace or property name is rejected
-  by the XMP property-name rules.
+- Sentinel errors `ErrMalformed`, `ErrPacketTooLarge`,
+  `ErrPacketTooLong`, and `ErrInvalidName`.  Malformed-input errors
+  from `Read` are wrapped so `errors.Is(err, ErrMalformed)` reports
+  them, while I/O errors from the underlying reader pass through
+  unchanged.
 - `Localized.Best` method, returning the best language match in the
   packet (or `Default` when no reasonable match exists).
-- `Date` has a new `String` method returning its canonical XMP
-  serialization (truncated according to `Date.Precision`).  It
-  returns `""` for a zero `V` and clamps an out-of-range
-  `Precision` so that fmt-style formatting stays panic-free.
+- `Date.String` method returning its canonical XMP serialization
+  (truncated according to `Date.Precision`).  It returns `""` for a
+  zero `V` and clamps an out-of-range `Precision` so that fmt-style
+  formatting stays panic-free.
 
 ### Fixed
+- `ResourceRef` now actually implements `Value`; previously
+  `Packet.Set(&MediaManagement{...})` panicked.
+- `Scan` no longer exhibits Θ(n²) behaviour on inputs containing many
+  bare `id="W5M0..."` attributes without an enclosing `<?xpacket`
+  header.
+- `Read` no longer poisons `PadToLength` when the source is too short
+  to re-emit; previously a malformed end-PI on too-short input made
+  every subsequent `Write` return `ErrPacketTooLong`.
 - `xmlns` declarations on a property element no longer affect how the
   element is classified by the RDF property-element rules.  This
   matches the spec and lets XMP produced by writers such as pikepdf
   decode correctly.
+- Property parsing has a recursion-depth cap to bound work on
+  adversarial input.
 
 ### Changed
 - The `Value` interface's `EncodeXMP` method now returns
@@ -52,13 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Packet.Get` now returns `error`.  Per-property decode failures are
   reported as `*PropertyError` values aggregated via `errors.Join`;
   fields whose data decoded successfully are still populated.
-- `Scan` now returns `(*Packet, error)`.  The error is non-nil when
-  XMP-shaped wrappers were present in the input but every parse
-  attempt failed; in that case the returned packet is nil and the
-  error wraps `ErrMalformed`.  `(nil, nil)` continues to mean "no
-  XMP packet found in the input."
 - `Packet.SetValue` now returns `error` instead of panicking on
   invalid property identifiers.  The error wraps `ErrInvalidName`.
+- `MediaManagement.RenditionClass` has type `RenditionClass` instead
+  of `Text`, matching the spec.
 - `Localized.Set` now stores `x-default` values in the `Default`
   field rather than as a key in `V`, matching how the decoder
   reconstructs Lang Alt arrays.
@@ -76,6 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The canonical encoding of a `PrecisionFull` value now always emits
   nine fractional-second digits, so a Decode/Encode/Decode cycle is
   idempotent for inputs containing explicit zero fractional seconds.
+- Minimum Go version raised to 1.25.
 
 ## [0.7.1] (2026-03-31)
 
