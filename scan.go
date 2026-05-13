@@ -19,7 +19,9 @@ package xmp
 import (
 	"bytes"
 	"errors"
+	"regexp"
 	"sort"
+	"strings"
 )
 
 // xmpPacketID is the fixed identifier required by ISO 16684-1
@@ -33,13 +35,11 @@ import (
 // Toolkit) anchor their scans on it for that reason.
 const xmpPacketID = "W5M0MpCehiHzreSzNTczkc9d"
 
-// maxScanParseFailures bounds the worst-case work [Scan] performs on
-// adversarial input.  Each parse failure forces [Scan] to retry past
-// the matched id attribute, which is cheap on real-world data
-// (typically zero failures) but unbounded on a hand-crafted blob full
-// of corrupt wrappers that engulf one another.  After this many
-// parse failures, [Scan] gives up.  Successful parses do not count.
-const maxScanParseFailures = 16
+// maxScanMatches caps the number of wrapper-shaped candidates Scan
+// considers per pass.  Each candidate triggers at most one [Read]
+// call, itself bounded by maxPacketSize bytes, so total work stays
+// O(maxScanMatches × maxPacketSize) regardless of input length.
+const maxScanMatches = 16
 
 // Scan locates an XMP packet wrapper inside arbitrary host bytes and
 // returns the parsed Packet.  The XMP packet wrapper is designed for
@@ -54,217 +54,208 @@ const maxScanParseFailures = 16
 //
 // When the data contains multiple packets (e.g. a PDF with both
 // document-level metadata and per-image XMP), the document-level
-// packet — identified by an empty rdf:about attribute — is preferred.
-// Otherwise the first packet that parses successfully is returned.
-// Packets that parse to no properties are skipped: an empty wrapper
-// conveys no metadata and would otherwise spuriously match the
-// document-level case.
+// packet — identified by parsing to About == nil — is preferred.
+// Otherwise the first wrapper that parses cleanly with at least one
+// property is returned.  Wrappers are considered in input order;
+// empty wrappers are silently skipped.
 //
 // Scan returns:
-//   - (packet, nil) when at least one wrapper parsed successfully;
-//   - (nil, nil) when no wrapper was found in the input at all;
+//   - (packet, nil) when at least one wrapper parsed successfully
+//     and carried at least one property;
+//   - (nil, nil) when no usable wrapper was found — the input
+//     contained no wrapper at all, or every located wrapper was
+//     empty (parsed cleanly but had no properties);
 //   - (nil, err) when one or more wrappers were located but every
 //     attempt to parse them failed.  In that case err is the
 //     [errors.Join] of all per-wrapper parse errors, each wrapping
-//     [ErrMalformed].
+//     [ErrMalformed].  Parse failures encountered while another
+//     wrapper later succeeds are dropped from the returned error.
 //
-// Parse failures encountered while another wrapper later parses
-// successfully are silently dropped: the caller has the data they
-// wanted.
+// "No XMP" is a normal outcome for host files where XMP is
+// optional, so absence is reported as (nil, nil) rather than as an
+// error; callers that don't care about parse failures can discard
+// the error and treat a nil packet as "no metadata".
 func Scan(data []byte) (*Packet, error) {
-	// Precompute, per encoding, the sorted positions of every
-	// "<?xpacket" and "?>" in the input.  findWrapper consults these
-	// via binary search to decide whether each id-attribute candidate
-	// lies inside an open <?xpacket ... ?> PI; without precomputation
-	// the per-candidate prefix walk is Θ(n²) on adversarial input.
-	xpacketStarts := make([][]int, len(scanPatterns))
-	closes := make([][]int, len(scanPatterns))
-	for i, p := range scanPatterns {
-		xpacketStarts[i] = allOccurrences(data, p.xpacket)
-		closes[i] = allOccurrences(data, p.close)
-	}
-
 	var fallback *Packet
 	var errs []error
-	pos := 0
-	failures := 0
-	for pos < len(data) {
-		bestStart, bestStop, bestIDAt := -1, -1, -1
-		var bestPattern scanPattern
-		for i, p := range scanPatterns {
-			start, stop, idAt, ok := findWrapper(data, pos, p, xpacketStarts[i], closes[i])
-			if !ok {
-				continue
-			}
-			if bestStart < 0 || start < bestStart {
-				bestStart, bestStop, bestIDAt = start, stop, idAt
-				bestPattern = p
-			}
+	for _, m := range collectMatches(data, wrapperRegexes) {
+		if m.stop-m.start > maxPacketSize {
+			continue
 		}
-		if bestStart < 0 {
-			break
-		}
-
-		packet, err := Read(bytes.NewReader(data[bestStart:bestStop]))
-		if err == nil && packet != nil && len(packet.Properties) > 0 {
-			if packet.About == nil {
-				return packet, nil
-			}
-			if fallback == nil {
-				fallback = packet
-			}
-		}
-
+		packet, err := Read(bytes.NewReader(data[m.start:m.stop]))
 		if err != nil {
 			errs = append(errs, err)
-			failures++
-			if failures > maxScanParseFailures {
-				break
-			}
-			// The candidate range may have been a corrupt outer
-			// wrapper that engulfed a real inner wrapper (the same
-			// id attribute can appear inside the outer's malformed
-			// content).  Resume just past the matched id attribute
-			// so any inner id match becomes the next candidate.
-			pos = bestIDAt + len(bestPattern.id)
-		} else {
-			pos = bestStop
+			continue
+		}
+		if packet == nil || len(packet.Properties) == 0 {
+			continue
+		}
+		if packet.About == nil {
+			return packet, nil
+		}
+		if fallback == nil {
+			fallback = packet
 		}
 	}
-
 	if fallback != nil {
 		return fallback, nil
 	}
-	return nil, errors.Join(errs...)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	return nil, nil
 }
 
-// findWrapper locates the next XMP wrapper at or after pos, encoded
-// according to p.  It anchors on the id="W5M0..." attribute, then
-// verifies that the attribute falls inside an enclosing <?xpacket ...?>
-// processing instruction and that a matching <?xpacket end=...?>
-// follows.  Returns the byte range that contains the full wrapper and
-// the position of the id attribute.
+// match is a [start, stop) byte range located by one of the wrapper
+// regexes.
+type match struct{ start, stop int }
+
+// collectMatches gathers wrapper candidates returned by all per-
+// encoding regexes, sorts them by start position, removes duplicates,
+// and truncates to maxScanMatches.  Inner candidates engulfed by a
+// failing outer wrapper are reachable because each per-encoding scan
+// advances by a single byte after every hit, allowing the next hit
+// to start anywhere strictly inside the previous one.
+func collectMatches(data []byte, regexes []*regexp.Regexp) []match {
+	var matches []match
+	for _, re := range regexes {
+		offset := 0
+		for range maxScanMatches {
+			if offset >= len(data) {
+				break
+			}
+			loc := re.FindIndex(data[offset:])
+			if loc == nil {
+				break
+			}
+			m := match{loc[0] + offset, loc[1] + offset}
+			matches = append(matches, m)
+			offset = m.start + 1
+		}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		if matches[i].start != matches[j].start {
+			return matches[i].start < matches[j].start
+		}
+		return matches[i].stop < matches[j].stop
+	})
+	// dedupe adjacent (sorted) duplicates produced when more than one
+	// encoding's regex matches the same byte range
+	n := 0
+	for i := range matches {
+		if i == 0 || matches[i] != matches[n-1] {
+			matches[n] = matches[i]
+			n++
+		}
+	}
+	matches = matches[:n]
+	if len(matches) > maxScanMatches {
+		matches = matches[:maxScanMatches]
+	}
+	return matches
+}
+
+// scanEncoding holds the regex fragments that differ between the
+// byte-level encodings (UTF-8, UTF-16BE, UTF-16LE) Scan supports.
+// The wrapper's surrounding-attribute pattern ([^?]) and payload
+// pattern ([\s\S]) are encoding-independent: the begin PI is pure
+// ASCII attribute syntax in every encoding, and the payload's
+// suffix anchor carries explicit \x00 bytes in its UTF-16 forms,
+// which is what re-locks the search onto a codeunit boundary after
+// rune-by-rune stepping.
+type scanEncoding struct {
+	lit func(string) string // ASCII text → regex matching its encoded bytes
+	ws  string              // regex matching one whitespace codeunit
+}
+
+var scanEncodings = []scanEncoding{
+	{
+		lit: regexp.QuoteMeta,
+		ws:  `\s`,
+	},
+	{
+		lit: func(s string) string { return utf16Lit(s, true) },
+		ws:  `\x00[\t\n\r ]`,
+	},
+	{
+		lit: func(s string) string { return utf16Lit(s, false) },
+		ws:  `[\t\n\r ]\x00`,
+	},
+}
+
+// utf16Lit returns a regex that matches the bytes of the ASCII string
+// s encoded in UTF-16 (big-endian if bigEndian, otherwise little-
+// endian).  Each ASCII byte is regex-escaped where required.
+func utf16Lit(s string, bigEndian bool) string {
+	var b strings.Builder
+	b.Grow(len(s) * 4)
+	for i := 0; i < len(s); i++ {
+		if bigEndian {
+			b.WriteString(`\x00`)
+		}
+		b.WriteString(regexp.QuoteMeta(string(s[i])))
+		if !bigEndian {
+			b.WriteString(`\x00`)
+		}
+	}
+	return b.String()
+}
+
+// wrapperPattern returns a regex source matching an XMP packet
+// wrapper in the given encoding.
 //
-// If the first id-attribute occurrence is outside any <?xpacket ?> PI
-// (theoretically possible when an unrelated tool emits a literal
-// id="W5M0..." in CharData), the search advances past it and tries
-// the next occurrence — otherwise a stray match before a real wrapper
-// would mask the wrapper.
-//
-// xpacketStarts and closes are sorted positions of "<?xpacket" and
-// "?>" across the entire data, precomputed once by Scan so the
-// per-candidate "is the id inside an open <?xpacket ?> PI?" check is
-// O(log n) rather than O(n).  An earlier implementation called
-// bytes.LastIndex(data[:idAt], p.xpacket) per candidate, making
-// adversarial input full of bare id matches Θ(n²).
-func findWrapper(data []byte, pos int, p scanPattern, xpacketStarts, closes []int) (start, stop, idAt int, ok bool) {
-	for pos < len(data) {
-		idIdx := bytes.Index(data[pos:], p.id)
-		if idIdx < 0 {
-			return 0, 0, 0, false
-		}
-		idAt = pos + idIdx
-
-		// The id attribute must lie inside <?xpacket ... ?>.  Find
-		// the nearest "<?xpacket" before idAt; if a closing "?>"
-		// separates them, the attribute is outside the PI and this
-		// candidate is rejected.  Skip past it and try the next
-		// match.
-		xi := sort.SearchInts(xpacketStarts, idAt) - 1
-		if xi < 0 {
-			pos = idAt + len(p.id)
-			continue
-		}
-		wrapperStart := xpacketStarts[xi]
-		ci := sort.SearchInts(closes, wrapperStart)
-		if ci < len(closes) && closes[ci]+len(p.close) <= idAt {
-			pos = idAt + len(p.id)
-			continue
-		}
-
-		beginCloseRel := bytes.Index(data[idAt:], p.close)
-		if beginCloseRel < 0 {
-			return 0, 0, 0, false
-		}
-		beginPIEnd := idAt + beginCloseRel + len(p.close)
-
-		endRel := bytes.Index(data[beginPIEnd:], p.endPI)
-		if endRel < 0 {
-			return 0, 0, 0, false
-		}
-		endStart := beginPIEnd + endRel
-
-		endCloseRel := bytes.Index(data[endStart:], p.close)
-		if endCloseRel < 0 {
-			return 0, 0, 0, false
-		}
-		return wrapperStart, endStart + endCloseRel + len(p.close), idAt, true
-	}
-	return 0, 0, 0, false
-}
-
-// allOccurrences returns all positions in data at which pattern
-// starts, in ascending order.  Empty patterns yield nil.
-func allOccurrences(data, pattern []byte) []int {
-	if len(pattern) == 0 {
-		return nil
-	}
-	var out []int
-	off := 0
-	for {
-		i := bytes.Index(data[off:], pattern)
-		if i < 0 {
-			return out
-		}
-		out = append(out, off+i)
-		off += i + 1
-	}
-}
-
-// scanPattern holds the byte-level form of the wrapper sentinels in
-// one Unicode encoding for one quote style.
-type scanPattern struct {
-	id      []byte // id="W5M0..." or id='W5M0...'
-	xpacket []byte // "<?xpacket"
-	endPI   []byte // "<?xpacket end="
-	close   []byte // "?>"
-}
-
-// scanPatterns lists wrapper sentinel bytes for each supported
-// encoding and quote style.  The XMP spec writes the id attribute
-// with double quotes; single quotes are also valid XML and accepted
-// here as well.  UTF-16 variants are produced by zero-padding each
-// ASCII byte on either side.
-var scanPatterns = func() []scanPattern {
-	idDouble := `id="` + xmpPacketID + `"`
-	idSingle := `id='` + xmpPacketID + `'`
+// The bounded {0,200} repeats inside the begin PI cap how far the
+// regex engine will search for an attribute boundary, so a
+// pathological PI cannot extend the match arbitrarily.  The payload
+// quantifier is non-greedy and unbounded; RE2 keeps total time linear
+// in the input regardless.
+func wrapperPattern(e scanEncoding) string {
+	ws1 := `(?:` + e.ws + `)`
+	wsStar := ws1 + `*`
+	wsPlus := ws1 + `+`
 	const (
-		xpacket = "<?xpacket"
-		endPI   = "<?xpacket end="
-		close   = "?>"
+		notQ = `[^?]{0,200}` // bounded non-'?' run inside the begin PI
+		any  = `[\s\S]*?`    // lazy, unbounded payload between begin and end PI
 	)
-	return []scanPattern{
-		{id: []byte(idDouble), xpacket: []byte(xpacket), endPI: []byte(endPI), close: []byte(close)},
-		{id: []byte(idSingle), xpacket: []byte(xpacket), endPI: []byte(endPI), close: []byte(close)},
-		{id: asciiToUTF16BE(idDouble), xpacket: asciiToUTF16BE(xpacket), endPI: asciiToUTF16BE(endPI), close: asciiToUTF16BE(close)},
-		{id: asciiToUTF16BE(idSingle), xpacket: asciiToUTF16BE(xpacket), endPI: asciiToUTF16BE(endPI), close: asciiToUTF16BE(close)},
-		{id: asciiToUTF16LE(idDouble), xpacket: asciiToUTF16LE(xpacket), endPI: asciiToUTF16LE(endPI), close: asciiToUTF16LE(close)},
-		{id: asciiToUTF16LE(idSingle), xpacket: asciiToUTF16LE(xpacket), endPI: asciiToUTF16LE(endPI), close: asciiToUTF16LE(close)},
+	id := `(?:` + e.lit(`"`+xmpPacketID+`"`) + `|` + e.lit(`'`+xmpPacketID+`'`) + `)`
+	rwAttr := `(?:` + e.lit(`"r"`) + `|` + e.lit(`"w"`) + `|` + e.lit(`'r'`) + `|` + e.lit(`'w'`) + `)`
+
+	var b strings.Builder
+	b.Grow(800)
+
+	// begin PI
+	b.WriteString(e.lit("<?xpacket"))
+	b.WriteString(ws1)
+	b.WriteString(notQ)
+	b.WriteString(e.lit("id"))
+	b.WriteString(wsStar)
+	b.WriteString(e.lit("="))
+	b.WriteString(wsStar)
+	b.WriteString(id)
+	b.WriteString(notQ)
+	b.WriteString(e.lit("?>"))
+
+	// payload
+	b.WriteString(any)
+
+	// end PI
+	b.WriteString(e.lit("<?xpacket"))
+	b.WriteString(wsPlus)
+	b.WriteString(e.lit("end"))
+	b.WriteString(wsStar)
+	b.WriteString(e.lit("="))
+	b.WriteString(wsStar)
+	b.WriteString(rwAttr)
+	b.WriteString(wsStar)
+	b.WriteString(e.lit("?>"))
+
+	return b.String()
+}
+
+var wrapperRegexes = func() []*regexp.Regexp {
+	out := make([]*regexp.Regexp, len(scanEncodings))
+	for i, e := range scanEncodings {
+		out[i] = regexp.MustCompile(wrapperPattern(e))
 	}
+	return out
 }()
-
-func asciiToUTF16BE(s string) []byte {
-	out := make([]byte, 2*len(s))
-	for i := range s {
-		out[2*i+1] = s[i]
-	}
-	return out
-}
-
-func asciiToUTF16LE(s string) []byte {
-	out := make([]byte, 2*len(s))
-	for i := range s {
-		out[2*i] = s[i]
-	}
-	return out
-}

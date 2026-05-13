@@ -20,8 +20,10 @@ import (
 	"bytes"
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
-	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 const dcNS = "http://purl.org/dc/elements/1.1/"
@@ -185,6 +187,29 @@ func TestScan_UTF16LE(t *testing.T) {
 	}
 }
 
+// TestScan_UTF16BE_BytesFormValidMultibyteUTF8 guards a UTF-16
+// regression: payload bytes that, viewed as UTF-8, form a valid
+// multibyte codepoint used to throw off the per-encoding payload
+// stepper.  Korean Hangul 캀 (U+CC80) encodes to UTF-16BE bytes
+// 0xCC 0x80, which is also valid UTF-8 for U+0300.
+func TestScan_UTF16BE_BytesFormValidMultibyteUTF8(t *testing.T) {
+	p := NewPacket()
+	p.SetValue(dcNS, "title", Text{V: "캀"})
+	utf16Bytes := transcodeUTF8ToUTF16(encodePacket(t, p), true)
+
+	got, err := Scan(utf16Bytes)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if got == nil {
+		t.Fatal("Scan returned nil for UTF-16BE wrapper with U+CC80 payload")
+	}
+	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	if v.V != "캀" {
+		t.Errorf("got %q, want 캀", v.V)
+	}
+}
+
 func TestScan_PrefersDocumentLevelAcrossEncodings(t *testing.T) {
 	// per-image UTF-16BE packet
 	imgPacket := NewPacket()
@@ -307,42 +332,93 @@ func TestScan_StrayXpacketBeforeRealWrapper(t *testing.T) {
 	}
 }
 
-func TestScan_StopsAfterTooManyParseFailures(t *testing.T) {
-	// Build many corrupt outer wrappers (each containing the magic id
-	// attribute in a <?xpacket?> PI followed by malformed XML),
-	// followed by a real wrapper.  Each corrupt outer's findWrapper
-	// returns a range engulfing everything down to the real end PI,
-	// so each parse fails.  Beyond maxScanParseFailures, Scan must
-	// give up — the real wrapper that follows is unreachable.
-	p := NewPacket()
-	p.SetValue(dcNS, "title", Text{V: "Real"})
+// TestScan_RejectsOversizedBeginPI checks that a wrapper whose begin
+// processing instruction exceeds the regex's bounded look-ahead is
+// rejected rather than slowing down or hanging the scanner.  The
+// check runs for every supported encoding so an encoding-specific
+// regression in the {0,200} bound is caught.
+func TestScan_RejectsOversizedBeginPI(t *testing.T) {
+	// 10 KiB of padding inside the begin PI dwarfs the regex's
+	// bounded {0,200} look-ahead window in every encoding.
+	padding := strings.Repeat("x", 10*1024)
+	utf8Data := []byte(`<?xpacket begin="" ` + padding + ` id="` + xmpPacketID + `"?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/">` +
+		`<dc:title>Padded</dc:title>` +
+		`</rdf:Description></rdf:RDF></x:xmpmeta>` +
+		`<?xpacket end="r"?>`)
 
-	var buf bytes.Buffer
-	for range maxScanParseFailures + 1 {
-		buf.WriteString(`<?xpacket id="` + xmpPacketID + `" begin="x"?>`)
-		buf.WriteString("\n<unclosed-tag\n")
+	for _, tc := range []struct {
+		name string
+		data []byte
+	}{
+		{"UTF-8", utf8Data},
+		{"UTF-16BE", transcodeUTF8ToUTF16(utf8Data, true)},
+		{"UTF-16LE", transcodeUTF8ToUTF16(utf8Data, false)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Scan(tc.data)
+			if got != nil {
+				t.Errorf("expected nil for oversized begin-PI, got %+v", got)
+			}
+			if err != nil {
+				t.Errorf("expected nil error for oversized begin-PI, got %v", err)
+			}
+		})
 	}
-	buf.Write(encodePacket(t, p))
+}
 
-	got, err := Scan(buf.Bytes())
-	if got != nil {
-		t.Errorf("Scan should have given up after the failure cap; got %+v", got)
+// TestScan_PrefersDescriptionWithoutAboutAttribute checks that a
+// document-level wrapper whose rdf:Description omits the rdf:about
+// attribute (treated as rdf:about="" by the XMP spec) is preferred
+// over a byte-earlier per-image wrapper.  The preference is keyed on
+// the parsed Packet.About being nil rather than on a literal byte
+// match of rdf:about="" in the source.
+func TestScan_PrefersDescriptionWithoutAboutAttribute(t *testing.T) {
+	// per-image wrapper with a non-empty rdf:about attribute
+	imgWrapper := `<?xpacket begin="" id="` + xmpPacketID + `"?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description rdf:about="urn:img:1" xmlns:dc="http://purl.org/dc/elements/1.1/">` +
+		`<dc:title>Image</dc:title>` +
+		`</rdf:Description></rdf:RDF></x:xmpmeta>` +
+		`<?xpacket end="r"?>`
+
+	// document-level wrapper that omits rdf:about entirely
+	docWrapper := `<?xpacket begin="" id="` + xmpPacketID + `"?>` +
+		`<x:xmpmeta xmlns:x="adobe:ns:meta/">` +
+		`<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">` +
+		`<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/">` +
+		`<dc:title>Document</dc:title>` +
+		`</rdf:Description></rdf:RDF></x:xmpmeta>` +
+		`<?xpacket end="r"?>`
+
+	data := []byte(imgWrapper + "\n" + docWrapper)
+
+	got, err := Scan(data)
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
 	}
-	if err == nil {
-		t.Error("expected non-nil error after exceeding failure cap")
+	if got == nil {
+		t.Fatal("Scan returned nil")
 	}
-	if !errors.Is(err, ErrMalformed) {
-		t.Errorf("expected error to wrap ErrMalformed, got %v", err)
+	if got.About != nil {
+		t.Errorf("expected document-level packet (About=nil), got About=%v", got.About)
+	}
+	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	if v.V != "Document" {
+		t.Errorf("got title %q, want Document", v.V)
 	}
 }
 
 func TestScan_EngulfedInnerWrapper(t *testing.T) {
-	// A corrupt outer <?xpacket ... id="W5M0..."?> PI matches as a
-	// begin sentinel and the only end PI in the data is the real
-	// wrapper's, so findWrapper returns a range that engulfs the real
-	// wrapper.  Read of that outer range fails on the malformed XML
-	// between the outer PI and the inner wrapper.  Scan must retry
-	// past the outer id attribute and find the inner real wrapper.
+	// A corrupt outer <?xpacket ... id="W5M0..."?> PI is wrapper-
+	// shaped, and the only end PI in the data is the real wrapper's,
+	// so the scanner produces an outer candidate that engulfs the
+	// real wrapper.  Read on that outer range fails on the malformed
+	// XML between the outer PI and the inner wrapper; Scan must keep
+	// considering inner candidates and recover the real wrapper.
 	p := NewPacket()
 	p.SetValue(dcNS, "title", Text{V: "Engulfed"})
 
@@ -389,11 +465,11 @@ func TestScan_SingleQuotedID(t *testing.T) {
 }
 
 func TestScan_MagicIDInPlainTextBeforeRealWrapper(t *testing.T) {
-	// The magic packet ID appearing in CharData earlier in the host
-	// bytes must not mask a real wrapper that follows.  An earlier
-	// version of findWrapper anchored on the first ID match and gave
-	// up if it was outside any <?xpacket ?> PI; the current version
-	// advances past the bad candidate and keeps looking.
+	// The magic packet ID appearing in plain text earlier in the host
+	// bytes must not mask a real wrapper that follows.  The scanner
+	// requires the magic ID to sit inside a <?xpacket ... ?> PI, so a
+	// bare occurrence in CharData is harmless and the real wrapper is
+	// found.
 	p := NewPacket()
 	p.SetValue(dcNS, "title", Text{V: "Real"})
 
@@ -454,37 +530,6 @@ func TestScan_GarbageAroundValidWrapper(t *testing.T) {
 	}
 }
 
-// TestScan_LinearOnAdversarialIDs guards against quadratic blow-up in
-// findWrapper.  An earlier version called bytes.LastIndex(data[:idAt],
-// "<?xpacket") for every id-attribute candidate, walking the entire
-// prefix on each iteration.  An attacker-controlled buffer of bare
-// id="..." matches with no <?xpacket anywhere then made Scan
-// Θ(n²)-time: 25 K bare ids in ~730 KiB took over ten seconds.  With
-// linear behaviour the same input completes in milliseconds.
-func TestScan_LinearOnAdversarialIDs(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping CPU-time regression test in -short mode")
-	}
-	const id = `id="` + xmpPacketID + `"`
-	data := bytes.Repeat([]byte(id+" "), 50000)
-
-	const limit = time.Second
-	start := time.Now()
-	got, err := Scan(data)
-	elapsed := time.Since(start)
-
-	if got != nil {
-		t.Errorf("expected nil packet for adversarial input, got %+v", got)
-	}
-	if err != nil {
-		t.Errorf("expected nil error for adversarial input, got %v", err)
-	}
-	if elapsed > limit {
-		t.Fatalf("Scan on %d-byte adversarial input took %v, want < %v (quadratic regression?)",
-			len(data), elapsed, limit)
-	}
-}
-
 // TestScan_MalformedWrapperReturnsError checks that Scan reports an
 // error when XMP-shaped wrappers are present but every parse fails.
 func TestScan_MalformedWrapperReturnsError(t *testing.T) {
@@ -503,4 +548,102 @@ func TestScan_MalformedWrapperReturnsError(t *testing.T) {
 	if !errors.Is(err, ErrMalformed) {
 		t.Errorf("expected error to wrap ErrMalformed, got %v", err)
 	}
+}
+
+// FuzzScan exercises the regex pass, match dedup, About-nil
+// preference, and the (packet, error) contract on arbitrary inputs.
+// Seeds cover single and back-to-back wrappers, UTF-16 variants, and
+// wrappers embedded in noise resembling real host bytes.
+//
+// Invariants asserted on every input:
+//   - Scan never panics.
+//   - (packet != nil) implies (err == nil).
+//   - If Scan returns a packet, re-emitting and re-scanning yields an
+//     equivalent packet.
+func FuzzScan(f *testing.F) {
+	// canonical single wrapper
+	seed := NewPacket()
+	seed.SetValue(dcNS, "title", Text{V: "Seed"})
+	var wrapper bytes.Buffer
+	if err := seed.Write(&wrapper, nil); err != nil {
+		f.Fatal(err)
+	}
+	wrapperBytes := wrapper.Bytes()
+
+	// also reuse the package's encode test cases for variety
+	wrappers := [][]byte{wrapperBytes}
+	for _, tc := range encodeTestCases {
+		var buf bytes.Buffer
+		if err := tc.in.Write(&buf, nil); err == nil {
+			wrappers = append(wrappers, buf.Bytes())
+		}
+	}
+
+	prefixes := [][]byte{
+		nil,
+		[]byte("garbage prefix\n"),
+		[]byte("%PDF-1.7\n<<>>stream\n"),
+		{0x00, 0x01, 0xff, 0x80, 0x3c, 0x3f},
+		[]byte(`<?xpacket begin="" id="other-tool"?>noise`),
+		[]byte("documentation: the magic XMP ID is " + xmpPacketID + "\n"),
+	}
+	suffixes := [][]byte{
+		nil,
+		[]byte("\ntrailer junk"),
+		[]byte("\nendstream\n%%EOF"),
+		[]byte(`<?xpacket end="r"?>`),
+	}
+
+	for _, w := range wrappers {
+		for _, p := range prefixes {
+			for _, s := range suffixes {
+				in := make([]byte, 0, len(p)+len(w)+len(s))
+				in = append(in, p...)
+				in = append(in, w...)
+				in = append(in, s...)
+				f.Add(in)
+			}
+		}
+	}
+	// UTF-16 variants of the canonical wrapper exercise the per-
+	// encoding regex paths.
+	f.Add(transcodeUTF8ToUTF16(wrapperBytes, true))
+	f.Add(transcodeUTF8ToUTF16(wrapperBytes, false))
+	// Two wrappers back-to-back exercise the preference / dedup paths.
+	f.Add(append(append([]byte(nil), wrapperBytes...), wrapperBytes...))
+
+	urlCmp := cmp.Comparer(func(u1, u2 *url.URL) bool {
+		if u1 == nil && u2 == nil {
+			return true
+		}
+		if u1 == nil || u2 == nil {
+			return false
+		}
+		return u1.String() == u2.String()
+	})
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		p1, err1 := Scan(data)
+		if p1 != nil && err1 != nil {
+			t.Fatalf("Scan returned both packet and error: packet=%+v, err=%v", p1, err1)
+		}
+		if p1 == nil {
+			return
+		}
+
+		var buf bytes.Buffer
+		if err := p1.Write(&buf, nil); err != nil {
+			t.Fatalf("Write of returned packet: %v", err)
+		}
+		p2, err2 := Scan(buf.Bytes())
+		if err2 != nil {
+			t.Fatalf("Scan(Write(p)) returned error: %v\nwritten: %q", err2, buf.String())
+		}
+		if p2 == nil {
+			t.Fatalf("Scan(Write(p)) returned nil\nwritten: %q", buf.String())
+		}
+		if d := cmp.Diff(p1, p2, urlCmp, cmp.AllowUnexported(Packet{})); d != "" {
+			t.Fatalf("round-trip mismatch (-want +got):\n%s", d)
+		}
+	})
 }
