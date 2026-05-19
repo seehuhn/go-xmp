@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.3] (2026-05-19)
+
+### Fixed
+- `Scan` worst-case work on adversarial host bytes is now bounded
+  regardless of input length (at most 16 candidate wrappers, each
+  bounded by the 16 MiB packet cap).  Earlier versions could degrade
+  to retry-heavy behaviour on blobs full of corrupt nested wrappers.
+- `Scan` no longer misaligns when UTF-16 payload bytes happen to form
+  a valid UTF-8 multibyte sequence (e.g. U+CC80 in UTF-16BE =
+  `0xCC 0x80`, also valid UTF-8 for U+0300).  The `(nil, nil)` vs
+  `(nil, err)` contract is tightened to match the documented intent.
+
 ## [0.7.2] (2026-05-11)
 
 ### Added
