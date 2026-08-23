@@ -19,7 +19,9 @@ package xmp
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"reflect"
+	"slices"
 )
 
 // DublinCore represents the properties in the Dublin Core namespace.
@@ -263,10 +265,12 @@ type MediaManagement struct {
 // [MediaManagement]; see [Namespace] for how to define your own.
 //
 // Each argument must be a (pointer to a) namespace struct.  Set returns
-// an error if an argument has the wrong shape, e.g. is not a struct or
-// lacks a [Namespace] field, and propagates the errors from
-// [Packet.SetValue] when a field's value cannot be encoded as a valid
-// XMP property (wrapping [ErrInvalid] or [ErrInvalidName]).
+// an error if an argument has the wrong shape, e.g. is not a struct,
+// lacks a [Namespace] field, has two fields ambiguously tied under the
+// same xmp name (see [Namespace]), or embeds a pointer to its own type;
+// it also propagates the errors from [Packet.SetValue] when a field's
+// value cannot be encoded as a valid XMP property (wrapping [ErrInvalid]
+// or [ErrInvalidName]).
 func (p *Packet) Set(models ...any) error {
 	for _, v := range models {
 		if err := p.setOne(v); err != nil {
@@ -281,44 +285,47 @@ func (p *Packet) setOne(v any) error {
 	if s.Kind() != reflect.Struct {
 		return errors.New("no struct found")
 	}
-	st := s.Type()
 
-	var namespace, prefix string
-	for i := 0; i < st.NumField(); i++ {
-		fVal := s.Field(i)
-		fInfo := st.Field(i)
+	fields, groupParent, err := collectFields(s.Type())
+	if err != nil {
+		return err
+	}
 
-		if fVal.Type() == nsTagType {
-			namespace = fInfo.Tag.Get("xmp")
-		} else if fVal.Type() == prefixTagType {
-			prefix = fInfo.Tag.Get("xmp")
-		}
+	namespace, prefix, err := resolveMarkers(fields, groupParent)
+	if err != nil {
+		return err
 	}
 	if namespace == "" {
 		return errors.New("XMP namespace not specified")
 	}
 
+	props, err := resolveProperties(fields)
+	if err != nil {
+		return err
+	}
+
 	p.RegisterPrefix(namespace, prefix)
 
-	for i := 0; i < st.NumField(); i++ {
-		fVal := s.Field(i)
-		fInfo := st.Field(i)
-
-		if !fVal.CanInterface() || !fVal.Type().Implements(typeType) {
+	for _, f := range props {
+		fVal, ok := fieldByIndex(s, f.index)
+		if !ok {
+			// The field lives behind a nil embedded pointer.  Set never
+			// allocates (it only reads values), so there is no value to
+			// read IsZero from; a nil embedded pointer is itself the zero
+			// value for its whole subtree, so every property it would
+			// have promoted is cleared, the same as an ordinary zero
+			// field would be.
+			p.ClearValue(namespace, f.propName)
 			continue
 		}
-		val := fVal.Interface().(Value)
 
-		propertyName := fInfo.Tag.Get("xmp")
-		if propertyName == "" {
-			propertyName = fInfo.Name
-		}
+		val := fVal.Interface().(Value)
 		if !val.IsZero() {
-			if err := p.SetValue(namespace, propertyName, val); err != nil {
+			if err := p.SetValue(namespace, f.propName, val); err != nil {
 				return err
 			}
 		} else {
-			p.ClearValue(namespace, propertyName)
+			p.ClearValue(namespace, f.propName)
 		}
 	}
 
@@ -331,55 +338,72 @@ func (p *Packet) setOne(v any) error {
 // [MediaManagement]; see [Namespace] for how to define your own.
 //
 // The argument dst must be a non-nil pointer to such a struct, otherwise
-// Get panics.  Properties not present in the packet are set to the zero
-// value of their field type.
+// Get panics; it also panics if fields are ambiguously tied under the
+// same xmp name (see [Namespace]) or if dst's type embeds a pointer to
+// itself, directly or indirectly. Properties not present in the packet
+// are set to the zero value of their field type; an embedded pointer
+// field is left nil rather than allocated if the packet has no property
+// for anything in its subtree.
 //
 // Get returns nil when every present property decoded successfully.
-// When one or more properties are present but malformed, their
-// corresponding fields are left at the zero value, the other fields
-// are still populated, and Get returns the per-property errors joined
-// via [errors.Join].  Each individual error is a [*PropertyError]
-// wrapping [ErrInvalid].
+// When one or more present properties cannot be decoded into their
+// fields, those fields (and any embedded pointer on the path to them)
+// are left unchanged, the other fields are still populated, and Get
+// returns the per-property errors joined via [errors.Join].  Each
+// individual error is a [*PropertyError]; decode failures wrap
+// [ErrInvalid].
 func (p *Packet) Get(dst any) error {
 	s := reflect.Indirect(reflect.ValueOf(dst))
-	st := s.Type()
 
-	var namespace string
-	for i := 0; i < st.NumField(); i++ {
-		fVal := s.Field(i)
-		fInfo := st.Field(i)
+	fields, groupParent, err := collectFields(s.Type())
+	if err != nil {
+		panic(err)
+	}
 
-		if fVal.Type() == nsTagType {
-			namespace = fInfo.Tag.Get("xmp")
-		}
+	namespace, _, err := resolveMarkers(fields, groupParent)
+	if err != nil {
+		panic(err)
 	}
 	if namespace == "" {
 		panic("not an XMP namespace struct")
 	}
 
+	props, err := resolveProperties(fields)
+	if err != nil {
+		panic(err)
+	}
+
 	var errs []error
-	for i := 0; i < st.NumField(); i++ {
-		fVal := s.Field(i)
-		fInfo := st.Field(i)
-
-		if !fVal.CanInterface() || !fVal.Type().Implements(typeType) {
-			continue
-		}
-
-		propertyName := fInfo.Tag.Get("xmp")
-		if propertyName == "" {
-			propertyName = fInfo.Name
-		}
-
-		name := xml.Name{Space: namespace, Local: propertyName}
+	for _, f := range props {
+		name := xml.Name{Space: namespace, Local: f.propName}
 		xmpData, ok := p.Properties[name]
 		if !ok {
-			fVal.Set(reflect.Zero(fInfo.Type)) // zero missing fields
+			if fVal, ok := fieldByIndex(s, f.index); ok {
+				// No allocation is needed to reach this field, so
+				// zeroing it costs nothing and matches Get's usual
+				// "properties not present are set to the zero value"
+				// behaviour, e.g. when dst is a reused struct.
+				fVal.Set(reflect.Zero(f.info.Type))
+			}
+			// If the field lies behind a nil embedded pointer, there is
+			// nothing to zero: the nil pointer already represents the
+			// zero value for its whole subtree, and allocating it just
+			// to zero fields that are already conceptually zero would
+			// defeat the point.
 			continue
 		}
 
-		val := fVal.Interface().(Value)
-		u, err := val.DecodeAnother(xmpData)
+		// Decode before touching dst, so that a property which fails to
+		// decode does not allocate embedded pointers or otherwise mutate
+		// the destination struct.
+		zero := reflect.Zero(f.info.Type).Interface().(Value)
+		u, err := zero.DecodeAnother(xmpData)
+		if err != nil {
+			errs = append(errs, &PropertyError{Name: name, Err: err})
+			continue
+		}
+
+		fVal, err := allocFieldByIndex(s, f.index)
 		if err != nil {
 			errs = append(errs, &PropertyError{Name: name, Err: err})
 			continue
@@ -387,6 +411,316 @@ func (p *Packet) Get(dst any) error {
 		fVal.Set(reflect.ValueOf(u))
 	}
 	return errors.Join(errs...)
+}
+
+// fieldEntry is one candidate field found while walking a namespace
+// struct's fields with [collectFields].
+type fieldEntry struct {
+	// depth is the embedding depth at which the field was found: 0 for a
+	// field declared directly on the struct passed to collectFields, 1
+	// for one promoted from a struct it anonymously embeds, and so on.
+	depth int
+
+	// group identifies the particular struct field list (the struct
+	// passed to collectFields itself, or one of the structs it
+	// anonymously embeds, however deeply) that this field was declared
+	// in. Two entries with the same group were declared side by side in
+	// the same struct type.
+	group int
+
+	info reflect.StructField
+
+	// propName is the field's effective xmp property name: its "xmp" tag,
+	// or its Go field name if untagged. Meaningless for the [Namespace]/
+	// [Prefix] marker fields, which use info.Tag directly instead.
+	propName string
+
+	// index is the field index path from the root struct to this field,
+	// for use with [fieldByIndex] and [allocFieldByIndex].
+	index []int
+}
+
+// groupParent maps a field group (see [fieldEntry.group]) to the group of
+// the struct that anonymously embeds it, or -1 for the group of the
+// struct passed to [collectFields] itself.
+type groupParent = map[int]int
+
+// collectFields walks t's fields, descending into anonymous (embedded)
+// struct fields -- including anonymous pointer-to-struct fields -- the
+// same way encoding/json does, and returns every field found together
+// with enough bookkeeping ([fieldEntry.depth] and [fieldEntry.group]) for
+// [resolveMarkers] and [resolveProperties] to resolve fields that are
+// promoted from more than one place under the same effective name.  Each
+// entry records its field index path ([fieldEntry.index]); the field
+// values themselves are looked up later, via [fieldByIndex] or
+// [allocFieldByIndex], only for a field that is actually read or written.
+//
+// An anonymous field is only descended into when it does not itself
+// implement [Value] and is not a [Namespace] or [Prefix] marker; those
+// are always leaves, even when embedded anonymously without the usual `_`
+// field name, since decomposing them would defeat their purpose.
+//
+// A struct type that (directly or indirectly) embeds a pointer to itself
+// is structurally cyclic: the walk cannot terminate, and neither could
+// [Packet.Get], since each freshly allocated instance's own embedded
+// pointer is nil again. collectFields reports such a type as an error.
+//
+// Note: unlike encoding/json, this is not cached per type; it re-walks
+// the struct type on every [Packet.Set] and [Packet.Get] call. Namespace
+// structs are small and this is not called in a hot loop, so the
+// simplicity is worth the (unmeasured) cost.
+func collectFields(t reflect.Type) ([]fieldEntry, groupParent, error) {
+	var entries []fieldEntry
+	parents := groupParent{}
+	nextGroup := 0
+	newGroup := func(parent int) int {
+		g := nextGroup
+		nextGroup++
+		parents[g] = parent
+		return g
+	}
+
+	// descend reports whether fInfo is an anonymous field whose fields
+	// should be promoted into its enclosing struct, rather than being
+	// treated as a leaf field itself.
+	descend := func(fInfo reflect.StructField) bool {
+		if fInfo.Type == nsTagType || fInfo.Type == prefixTagType {
+			return false // markers are always leaves, even if anonymous
+		}
+		if !fInfo.Anonymous || fInfo.Type.Implements(typeType) {
+			return false
+		}
+		switch fInfo.Type.Kind() {
+		case reflect.Struct:
+			return true
+		case reflect.Pointer:
+			return fInfo.Type.Elem().Kind() == reflect.Struct
+		default:
+			return false
+		}
+	}
+
+	// seenPtrs holds the anonymous pointer types on the path currently
+	// being walked; entries are removed again on the way back up, so a
+	// diamond embedding (the same pointer type in two sibling branches)
+	// is not mistaken for a cycle.
+	seenPtrs := map[reflect.Type]bool{}
+
+	var walk func(t reflect.Type, index []int, depth, group int) error
+	walk = func(t reflect.Type, index []int, depth, group int) error {
+		for i := 0; i < t.NumField(); i++ {
+			fInfo := t.Field(i)
+			idx := append(slices.Clone(index), i)
+
+			if descend(fInfo) {
+				childGroup := newGroup(group)
+				if fInfo.Type.Kind() == reflect.Pointer {
+					if seenPtrs[fInfo.Type] {
+						return fmt.Errorf("xmp: cyclic embedded pointer type %s", fInfo.Type)
+					}
+					seenPtrs[fInfo.Type] = true
+					err := walk(fInfo.Type.Elem(), idx, depth+1, childGroup)
+					delete(seenPtrs, fInfo.Type)
+					if err != nil {
+						return err
+					}
+				} else {
+					if err := walk(fInfo.Type, idx, depth+1, childGroup); err != nil {
+						return err
+					}
+				}
+				continue
+			}
+
+			name := fInfo.Tag.Get("xmp")
+			if name == "" {
+				name = fInfo.Name
+			}
+			entries = append(entries, fieldEntry{depth: depth, group: group, info: fInfo, propName: name, index: idx})
+		}
+		return nil
+	}
+
+	rootGroup := newGroup(-1)
+	if err := walk(t, nil, 0, rootGroup); err != nil {
+		return nil, nil, err
+	}
+	return entries, parents, nil
+}
+
+// fieldByIndex returns the field of s at the given index path, following
+// anonymous pointer fields on the way.  ok is false if a nil pointer
+// lies on the path, i.e. the field does not currently exist.
+func fieldByIndex(s reflect.Value, index []int) (v reflect.Value, ok bool) {
+	v = s
+	for _, i := range index {
+		if v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				return reflect.Value{}, false
+			}
+			v = v.Elem()
+		}
+		v = v.Field(i)
+	}
+	return v, true
+}
+
+// allocFieldByIndex is like [fieldByIndex], but allocates nil anonymous
+// pointer fields on the path.  When it reaches a nil pointer it cannot
+// set (an anonymous field that is itself unexported, see [Namespace]),
+// it undoes the allocations it already made, leaving s unchanged, and
+// returns an error.
+//
+// An anonymously embedded struct type may itself be unexported (e.g. a
+// lower-case helper type shared between a family of exported namespace
+// structs in another package): reflect still allows reading and setting
+// its exported leaf fields, because it clears the read-only flag it
+// would otherwise attach (flagEmbedRO) once the field reached through
+// the embedding is itself exported. This relief does not extend to
+// allocating an unexported anonymous pointer field: that means setting
+// the unexported field itself, not a promoted subfield.
+func allocFieldByIndex(s reflect.Value, index []int) (reflect.Value, error) {
+	var allocated []reflect.Value
+	v := s
+	for _, i := range index {
+		if v.Kind() == reflect.Pointer {
+			if v.IsNil() {
+				if !v.CanSet() {
+					for _, pv := range allocated {
+						pv.Set(reflect.Zero(pv.Type()))
+					}
+					return reflect.Value{}, fmt.Errorf("xmp: cannot allocate embedded field of unexported type %s", v.Type())
+				}
+				v.Set(reflect.New(v.Type().Elem()))
+				allocated = append(allocated, v)
+			}
+			v = v.Elem()
+		}
+		v = v.Field(i)
+	}
+	return v, nil
+}
+
+// resolveMarkers finds the effective [Namespace]/[Prefix] pair among
+// entries, or an error if it is ambiguous (see [Namespace]).
+//
+// The namespace is taken from the shallowest embedding depth at which
+// exactly one [Namespace] field is found; more than one at that depth is
+// reported as an ambiguity error rather than silently resolving to no
+// namespace at all.
+//
+// The prefix search is then restricted to the group that declared the
+// winning Namespace field and the chain of groups that (however deeply)
+// anonymously embed it -- never a sibling group that merely happens to
+// share the same depth -- so a [Prefix] can only pair with a [Namespace]
+// it actually, lexically encloses. Among the groups in that chain that
+// declare a Prefix, the shallowest wins, so a struct's own Prefix always
+// overrides one inherited from something it embeds.
+func resolveMarkers(entries []fieldEntry, parents groupParent) (namespace, prefix string, err error) {
+	nsDepth := -1
+	var nsCandidates []fieldEntry
+	for _, e := range entries {
+		if e.info.Type != nsTagType {
+			continue
+		}
+		switch {
+		case nsDepth == -1 || e.depth < nsDepth:
+			nsDepth = e.depth
+			nsCandidates = []fieldEntry{e}
+		case e.depth == nsDepth:
+			nsCandidates = append(nsCandidates, e)
+		}
+	}
+	if len(nsCandidates) == 0 {
+		return "", "", nil
+	}
+	if len(nsCandidates) > 1 {
+		return "", "", fmt.Errorf("xmp: ambiguous Namespace field at embedding depth %d", nsDepth)
+	}
+	nsGroup := nsCandidates[0].group
+	namespace = nsCandidates[0].info.Tag.Get("xmp")
+	if namespace == "" {
+		// Failing here, rather than reporting "no namespace found",
+		// points at the actual defect: an untagged Namespace field
+		// would otherwise silently shadow a tagged one found deeper.
+		return "", "", errors.New("xmp: Namespace field has no xmp tag")
+	}
+
+	enclosing := map[int]bool{nsGroup: true}
+	for g := nsGroup; parents[g] != -1; {
+		g = parents[g]
+		enclosing[g] = true
+	}
+
+	prefixDepth := -1
+	var prefixCandidates []fieldEntry
+	for _, e := range entries {
+		if e.info.Type != prefixTagType || !enclosing[e.group] {
+			continue
+		}
+		switch {
+		case prefixDepth == -1 || e.depth < prefixDepth:
+			prefixDepth = e.depth
+			prefixCandidates = []fieldEntry{e}
+		case e.depth == prefixDepth:
+			prefixCandidates = append(prefixCandidates, e)
+		}
+	}
+	if len(prefixCandidates) > 1 {
+		return "", "", fmt.Errorf("xmp: ambiguous Prefix field at embedding depth %d", prefixDepth)
+	}
+	if len(prefixCandidates) == 1 {
+		prefix = prefixCandidates[0].info.Tag.Get("xmp")
+	}
+	return namespace, prefix, nil
+}
+
+// resolveProperties returns the leaf property fields to visit -- those
+// whose type implements [Value] and is exported -- resolved to one
+// winner per effective xmp name ([fieldEntry.propName]) using the same
+// shallowest-depth-wins rule as [resolveMarkers]: a name that appears at
+// more than one depth resolves to the shallowest one. Names that tie at
+// the same depth are reported as an ambiguity error rather than silently
+// dropped (see [Namespace]). The result preserves the order in which
+// each winning name was first encountered.
+func resolveProperties(entries []fieldEntry) ([]fieldEntry, error) {
+	type slot struct {
+		depth int
+		es    []fieldEntry
+	}
+	byName := make(map[string]*slot)
+	var order []string
+	for _, e := range entries {
+		if e.info.PkgPath != "" || !e.info.Type.Implements(typeType) {
+			continue
+		}
+
+		sl, ok := byName[e.propName]
+		if !ok {
+			byName[e.propName] = &slot{depth: e.depth, es: []fieldEntry{e}}
+			order = append(order, e.propName)
+			continue
+		}
+		switch {
+		case e.depth < sl.depth:
+			sl.depth = e.depth
+			sl.es = []fieldEntry{e}
+		case e.depth == sl.depth:
+			sl.es = append(sl.es, e)
+		}
+	}
+
+	var result []fieldEntry
+	var errs []error
+	for _, name := range order {
+		sl := byName[name]
+		if len(sl.es) == 1 {
+			result = append(result, sl.es[0])
+			continue
+		}
+		errs = append(errs, fmt.Errorf("xmp: ambiguous field for property %q at embedding depth %d", name, sl.depth))
+	}
+	return result, errors.Join(errs...)
 }
 
 var (
@@ -403,6 +737,56 @@ var (
 //	    _ Namespace `xmp:"http://example.com/ns/my/namespace/"`
 //	    ...
 //	}
+//
+// # Sharing fields between namespace structs via embedding
+//
+// A family of near-identical namespace versions (e.g. PRISM Basic
+// 2.0/2.1/3.0) can share a common field set, or a common Namespace/[Prefix]
+// pair, by factoring it out into a separate struct and embedding it
+// anonymously, instead of repeating it in every variant:
+//
+//	type sharedFields struct {
+//	    Foo Text `xmp:"foo"`
+//	}
+//
+//	type MyNamespaceV1 struct {
+//	    _ Namespace `xmp:"http://example.com/ns/my/namespace/1.0/"`
+//	    sharedFields
+//	}
+//
+// [Packet.Set] and [Packet.Get] promote the fields of an anonymously
+// embedded struct -- including through an anonymous pointer-to-struct
+// field -- into the enclosing struct, the way encoding/json promotes
+// fields of embedded structs. A field of a type that implements [Value]
+// (e.g. [Text], [Real]) is always treated as a single leaf property, even
+// when embedded anonymously, since it is not meant to be decomposed into
+// its own fields; Namespace and Prefix are leaves for the same reason,
+// even without their usual `_` field name.
+//
+// A field declared directly on a struct always takes priority over one
+// promoted from something it embeds, and a Namespace/Prefix pair is only
+// ever taken from a single struct in the embedding chain -- the struct
+// that declares the Namespace, or, failing that, the shallowest struct
+// enclosing it that declares a Prefix -- never from an unrelated sibling
+// embed. Two fields that tie under the same effective xmp name at the
+// same embedding depth -- whether promoted from embedded structs or
+// declared side by side in a single struct -- and likewise two Namespace
+// (or two Prefix) fields tied at the same depth, are an ambiguity: Set
+// reports it as an error and Get panics, rather than silently dropping
+// or mispairing fields.
+//
+// An anonymously embedded pointer-to-struct field is promoted lazily: Set
+// never allocates a nil one (it only reads values, so a nil embedded
+// pointer's fields are simply treated as zero, clearing any property they
+// would otherwise have written), and Get allocates one only once it
+// actually has a property to decode into it. A struct type that embeds a
+// pointer to itself, directly or indirectly, is rejected -- as an error
+// by Set, with a panic by Get -- rather than walked forever. An
+// anonymously embedded pointer field that
+// is itself unexported (relative to the package that calls Set or Get)
+// cannot be allocated at all; Get reports this as a per-property error
+// instead of silently losing the data, matching encoding/json's
+// Unmarshal.
 type Namespace struct{}
 
 // Prefix can be used in XMP namespace structs to optionally specify the
@@ -416,5 +800,6 @@ type Namespace struct{}
 //	}
 //
 // If no prefix is specified (or if there is a prefix name clash), a prefix is
-// automatically chosen.
+// automatically chosen.  See [Namespace] for how a Prefix declared on an
+// embedded struct is paired with the enclosing struct's Namespace.
 type Prefix struct{}
