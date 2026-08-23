@@ -364,7 +364,8 @@ type MixedDepthMarkers struct {
 // directly on a namespace struct is never paired with a [Prefix] found
 // at a different embedding depth (here, one promoted from an embedded
 // struct). MixedDepthMarkers declares its own Namespace but no Prefix of
-// its own, so the registered prefix must be empty, not "inner".
+// its own, so no prefix must be registered for the namespace, in
+// particular not "inner".
 func TestMarkersNotMixedAcrossDepths(t *testing.T) {
 	in := &MixedDepthMarkers{}
 	in.Foo = NewText("val")
@@ -375,8 +376,8 @@ func TestMarkersNotMixedAcrossDepths(t *testing.T) {
 	}
 
 	const ns = "http://example.com/test/mixed-depth-markers/"
-	if got := p.nsToPrefix[ns]; got != "" {
-		t.Errorf("registered prefix = %q, want \"\" (Namespace and Prefix must come from the same embedding depth)", got)
+	if got, ok := p.nsToPrefix[ns]; ok {
+		t.Errorf("registered prefix = %q, want none (Namespace and Prefix must come from the same embedding depth)", got)
 	}
 }
 
@@ -523,8 +524,8 @@ func TestSiblingMarkersNotPaired(t *testing.T) {
 	}
 
 	const ns = "http://example.com/test/sibling-markers/"
-	if got := p.nsToPrefix[ns]; got != "" {
-		t.Errorf("registered prefix = %q, want \"\" (a Prefix from an unrelated sibling embed must not be used)", got)
+	if got, ok := p.nsToPrefix[ns]; ok {
+		t.Errorf("registered prefix = %q, want none (a Prefix from an unrelated sibling embed must not be used)", got)
 	}
 }
 

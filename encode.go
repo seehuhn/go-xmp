@@ -146,7 +146,8 @@ func (p *Packet) newEncoder(w io.Writer, opt *PacketOptions) (*encoder, error) {
 			continue
 		}
 		pfx, isRegistered := p.nsToPrefix[ns]
-		if !isRegistered {
+		if !isRegistered || pfx == "" {
+			// an empty prefix cannot be written; auto-generate below
 			continue
 		}
 		if _, isClash := nsToPrefix[pfx]; isClash {

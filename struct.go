@@ -304,7 +304,9 @@ func (p *Packet) setOne(v any) error {
 		return err
 	}
 
-	p.RegisterPrefix(namespace, prefix)
+	if prefix != "" {
+		p.RegisterPrefix(namespace, prefix)
+	}
 
 	for _, f := range props {
 		fVal, ok := fieldByIndex(s, f.index)

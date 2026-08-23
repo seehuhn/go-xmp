@@ -402,3 +402,63 @@ func TestPacketPadToLengthNegative(t *testing.T) {
 		t.Error("negative PadToLength: expected error, got nil")
 	}
 }
+
+// NoPrefixNS declares a Namespace but no [Prefix] marker at all.
+type NoPrefixNS struct {
+	_   Namespace `xmp:"http://example.com/test/no-prefix/"`
+	Foo Text      `xmp:"foo"`
+}
+
+// TestWriteAfterSetWithoutPrefix checks that Set followed by Write
+// produces a well-formed packet when the namespace struct declares no
+// [Prefix]: the encoder must choose a prefix automatically rather than
+// emit an empty one.
+func TestWriteAfterSetWithoutPrefix(t *testing.T) {
+	in := &NoPrefixNS{Foo: NewText("val")}
+	p := NewPacket()
+	if err := p.Set(in); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := p.Write(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	p2, err := Read(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Write produced an unparseable packet: %v", err)
+	}
+	var out NoPrefixNS
+	if err := p2.Get(&out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Foo.V != "val" {
+		t.Errorf("Foo.V = %q, want %q", out.Foo.V, "val")
+	}
+}
+
+// TestWriteIgnoresEmptyRegisteredPrefix checks that an empty prefix
+// registered via [Packet.RegisterPrefix] is ignored: Write must choose a
+// prefix automatically rather than emit invalid XML.
+func TestWriteIgnoresEmptyRegisteredPrefix(t *testing.T) {
+	p := NewPacket()
+	const ns = "http://example.com/test/empty-prefix/"
+	if err := p.SetValue(ns, "foo", NewText("val")); err != nil {
+		t.Fatal(err)
+	}
+	p.RegisterPrefix(ns, "")
+
+	var buf bytes.Buffer
+	if err := p.Write(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+	p2, err := Read(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Fatalf("Write produced an unparseable packet: %v", err)
+	}
+	name := xml.Name{Space: ns, Local: "foo"}
+	if _, ok := p2.Properties[name]; !ok {
+		t.Error("property foo lost in a write/read cycle")
+	}
+}
