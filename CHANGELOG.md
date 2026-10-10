@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.5] (2026-10-10)
+
+### Fixed
+- `Packet.Set` and `Packet.Get` descend into anonymously embedded
+  structs and pointers to structs in namespace structs, promoting their
+  fields as `encoding/json` does.  Previously such fields were silently
+  skipped, and embedded `Namespace`/`Prefix` markers made `Get` panic.
+  A shallower field shadows a deeper one with the same XMP name, and a
+  `Prefix` pairs only with the `Namespace` of its own or an enclosing
+  struct.  Ambiguous fields or markers, cyclic embedded pointer types
+  and untagged `Namespace` fields are reported as errors (`Set`) or
+  panics (`Get`).  `Get` allocates an embedded pointer only when it has
+  data to decode into it.
+- An empty namespace prefix is no longer written to the output, where
+  it produced malformed XML; a prefix is chosen automatically instead.
+
 ## [v0.7.4] (2026-06-25)
 
 ### Changed
