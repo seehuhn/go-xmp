@@ -37,9 +37,9 @@ func TestText(t *testing.T) {
 	}
 	p.SetValue("http://ns.seehuhn.de/test/#", "prop", A)
 
-	B, err := PacketGetValue[Text](p, "http://ns.seehuhn.de/test/#", "prop")
+	B, err := p.GetValue[Text]("http://ns.seehuhn.de/test/#", "prop")
 	if err != nil {
-		t.Fatalf("p.Get: %v", err)
+		t.Fatalf("p.GetValue: %v", err)
 	}
 
 	if d := cmp.Diff(A, B); d != "" {
@@ -74,9 +74,9 @@ func TestInteger(t *testing.T) {
 	A := NewInteger(2020)
 	p.SetValue("http://ns.seehuhn.de/test/#", "rev", A)
 
-	B, err := PacketGetValue[Integer](p, "http://ns.seehuhn.de/test/#", "rev")
+	B, err := p.GetValue[Integer]("http://ns.seehuhn.de/test/#", "rev")
 	if err != nil {
-		t.Fatalf("p.Get: %v", err)
+		t.Fatalf("p.GetValue: %v", err)
 	}
 	if d := cmp.Diff(A, B); d != "" {
 		t.Errorf("A and B are different (-want +got):\n%s", d)
@@ -85,9 +85,9 @@ func TestInteger(t *testing.T) {
 	// negative values
 	C := NewInteger(-7)
 	p.SetValue("http://ns.seehuhn.de/test/#", "neg", C)
-	D, err := PacketGetValue[Integer](p, "http://ns.seehuhn.de/test/#", "neg")
+	D, err := p.GetValue[Integer]("http://ns.seehuhn.de/test/#", "neg")
 	if err != nil {
-		t.Fatalf("p.Get: %v", err)
+		t.Fatalf("p.GetValue: %v", err)
 	}
 	if d := cmp.Diff(C, D); d != "" {
 		t.Errorf("C and D are different (-want +got):\n%s", d)
@@ -447,9 +447,9 @@ func TestUnorderedArray(t *testing.T) {
 	}
 	p.SetValue("http://ns.seehuhn.de/test/#", "prop", A)
 
-	B, err := PacketGetValue[UnorderedArray[Text]](p, "http://ns.seehuhn.de/test/#", "prop")
+	B, err := p.GetValue[UnorderedArray[Text]]("http://ns.seehuhn.de/test/#", "prop")
 	if err != nil {
-		t.Fatalf("p.Get: %v", err)
+		t.Fatalf("p.GetValue: %v", err)
 	}
 
 	if d := cmp.Diff(A, B); d != "" {

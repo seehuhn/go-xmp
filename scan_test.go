@@ -50,7 +50,7 @@ func TestScan_SinglePacket(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil packet")
 	}
-	v, err := PacketGetValue[Text](got, dcNS, "title")
+	v, err := got.GetValue[Text](dcNS, "title")
 	if err != nil {
 		t.Fatalf("title lookup: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestScan_PrefersDocumentLevel(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil packet")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "Document" {
 		t.Errorf("got title %q, want Document (the rdf:about=\"\" packet)", v.V)
 	}
@@ -112,7 +112,7 @@ func TestScan_FallbackToFirstWhenNoneAreDocumentLevel(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "First" {
 		t.Errorf("got title %q, want First (fallback)", v.V)
 	}
@@ -157,7 +157,7 @@ func TestScan_UTF16BE(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil for UTF-16BE wrapper")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "héllo" {
 		t.Errorf("got %q, want héllo", v.V)
 	}
@@ -181,7 +181,7 @@ func TestScan_UTF16LE(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil for UTF-16LE wrapper")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "héllo" {
 		t.Errorf("got %q, want héllo", v.V)
 	}
@@ -204,7 +204,7 @@ func TestScan_UTF16BE_BytesFormValidMultibyteUTF8(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil for UTF-16BE wrapper with U+CC80 payload")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "캀" {
 		t.Errorf("got %q, want 캀", v.V)
 	}
@@ -233,7 +233,7 @@ func TestScan_PrefersDocumentLevelAcrossEncodings(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "Document" {
 		t.Errorf("got title %q, want Document (document-level UTF-8 packet)", v.V)
 	}
@@ -262,7 +262,7 @@ func TestScan_SkipsEmptyPacket(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "Real" {
 		t.Errorf("got title %q, want Real", v.V)
 	}
@@ -326,7 +326,7 @@ func TestScan_StrayXpacketBeforeRealWrapper(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil; expected the real wrapper")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "Real" {
 		t.Errorf("got title %q, want Real", v.V)
 	}
@@ -406,7 +406,7 @@ func TestScan_PrefersDescriptionWithoutAboutAttribute(t *testing.T) {
 	if got.About != nil {
 		t.Errorf("expected document-level packet (About=nil), got About=%v", got.About)
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "Document" {
 		t.Errorf("got title %q, want Document", v.V)
 	}
@@ -434,7 +434,7 @@ func TestScan_EngulfedInnerWrapper(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil; expected the engulfed inner wrapper")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "Engulfed" {
 		t.Errorf("got title %q, want Engulfed", v.V)
 	}
@@ -458,7 +458,7 @@ func TestScan_SingleQuotedID(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil for single-quoted id attribute")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "SingleQuoted" {
 		t.Errorf("got title %q, want SingleQuoted", v.V)
 	}
@@ -484,7 +484,7 @@ func TestScan_MagicIDInPlainTextBeforeRealWrapper(t *testing.T) {
 	if got == nil {
 		t.Fatal("Scan returned nil; expected the real wrapper")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "Real" {
 		t.Errorf("got title %q, want Real", v.V)
 	}
@@ -524,7 +524,7 @@ func TestScan_GarbageAroundValidWrapper(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected packet found inside surrounding bytes")
 	}
-	v, _ := PacketGetValue[Text](got, dcNS, "title")
+	v, _ := got.GetValue[Text](dcNS, "title")
 	if v.V != "Anywhere" {
 		t.Errorf("got %q, want Anywhere", v.V)
 	}

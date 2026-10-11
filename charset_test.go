@@ -123,7 +123,7 @@ func TestRead_UTF16WithEncodingDeclaration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Read: %v", err)
 			}
-			v, err := PacketGetValue[Text](p, dcNS, "title")
+			v, err := p.GetValue[Text](dcNS, "title")
 			if err != nil {
 				t.Fatalf("title lookup: %v", err)
 			}

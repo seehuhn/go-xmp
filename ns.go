@@ -71,7 +71,7 @@ var defaultPrefix = map[string]string{
 // Namespace URIs for the predefined XMP schemas, plus the auxiliary
 // namespaces (XML, RDF, ResourceRef) used by the XMP serialization
 // itself.  The schema URIs (NSDublinCore through NSPDFXID) are
-// suitable for [Packet.SetValue], [PacketGetValue], and
+// suitable for [Packet.SetValue], [Packet.GetValue], and
 // [Packet.ClearValue]; NSXML, NSRDF, and NSResourceRef are exposed
 // for callers that need to recognise these namespaces in raw
 // property data, not as schema arguments.
