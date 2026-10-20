@@ -20,6 +20,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"math"
+	"slices"
 	"testing"
 	"time"
 
@@ -205,6 +206,32 @@ func TestDateStringClampsInvalidPrecision(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("Precision=%s: String() = %q, want %q", tc.p, got, tc.want)
 		}
+	}
+}
+
+func TestLocalizedEncodeOrder(t *testing.T) {
+	loc := Localized{
+		V: map[language.Tag]Text{
+			language.Japanese: NewText("j"),
+			language.German:   NewText("d"),
+			language.English:  NewText("e"),
+			language.French:   NewText("f"),
+			language.Italian:  NewText("i"),
+		},
+		Default: NewText("x"),
+	}
+	raw, err := loc.EncodeXMP(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, v := range raw.(RawArray).Value {
+		lang, _ := v.(Text).Q.StripLanguage()
+		got = append(got, lang.String())
+	}
+	want := []string{"x-default", "de", "en", "fr", "it", "ja"}
+	if !slices.Equal(got, want) {
+		t.Errorf("language order = %v, want %v", got, want)
 	}
 }
 

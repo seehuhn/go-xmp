@@ -19,6 +19,7 @@ package xmp
 import (
 	"encoding/xml"
 	"fmt"
+	"maps"
 	"math"
 	"mime"
 	"regexp"
@@ -880,7 +881,9 @@ func (l Localized) EncodeXMP(*Packet) (Raw, error) {
 			Q: l.Default.Q.WithLanguage(defaultLanguage),
 		})
 	}
-	for lang, txt := range l.V {
+	// sorted so that the output is deterministic
+	for _, lang := range sortedLangs(l.V) {
+		txt := l.V[lang]
 		vals = append(vals, Text{
 			V: txt.V,
 			Q: txt.Q.WithLanguage(lang),
@@ -892,6 +895,13 @@ func (l Localized) EncodeXMP(*Packet) (Raw, error) {
 		Kind:  Alternative,
 		Q:     l.Q,
 	}, nil
+}
+
+// sortedLangs returns the keys of m, sorted by their string form.
+func sortedLangs(m map[language.Tag]Text) []language.Tag {
+	return slices.SortedFunc(maps.Keys(m), func(a, b language.Tag) int {
+		return strings.Compare(a.String(), b.String())
+	})
 }
 
 // DecodeAnother implements the [Value] interface.
@@ -938,13 +948,7 @@ func (Localized) DecodeAnother(val Raw) (Value, error) {
 func (l Localized) Best(lang language.Tag) string {
 	if len(l.V) > 0 && !isDefaultLang(lang) {
 		// sort tags so the matcher's tie-break is deterministic
-		tags := make([]language.Tag, 0, len(l.V))
-		for t := range l.V {
-			tags = append(tags, t)
-		}
-		slices.SortFunc(tags, func(a, b language.Tag) int {
-			return strings.Compare(a.String(), b.String())
-		})
+		tags := sortedLangs(l.V)
 		m := language.NewMatcher(tags)
 		_, idx, conf := m.Match(lang)
 		if conf >= language.Low && idx >= 0 && idx < len(tags) {
