@@ -1,20 +1,38 @@
-jvxml
-=====
+Third-Party Material in go-xmp
+==============================
 
-This is a modified version of part of the Go standard library's encoding/xml
-package.
+Unless stated otherwise, the files in this repository are
+Copyright Jochen Voss and are distributed under the BSD 3-Clause License
+(see the file LICENSE).
 
-Original license notice: "Use of this source code is governed by a BSD-style
-license that can be found in the LICENSE file." This refers to the LICENSE file
-in the Go source distribution, which is reproduced in the file jvxml/LICENSE.
+The material listed below is derived from work by others.  It remains under
+the licence given in each entry, independently of the licence of the go-xmp
+code, and the stated copyright notices and licence texts must be kept when
+it is redistributed.  The changes made to it for go-xmp are Copyright Jochen
+Voss and are distributed under the BSD 3-Clause License.
 
 
-ns.go
-=====
+jvxml/*.go
+----------
 
-The code for generating namespace prefixes is taken from the file
-encoding/xml/encoder.go in the Go standard library.
+Description: A modified copy of part of the Go standard library package
+    encoding/xml, with an additional EmptyElement type and an exported
+    IsName function.
+Upstream:    https://go.dev/src/encoding/xml/
+Copyright:   Copyright 2009 and 2011 The Go Authors.  All rights reserved
+    (the year of each file is given in its header).
+Licence:     BSD 3-Clause License.
+Full text:   jvxml/LICENSE, and the notice in the header of each file.
 
-Original license notice: "Use of this source code is governed by a BSD-style
-license that can be found in the LICENSE file." This refers to the LICENSE file
-in the Go source distribution, which is reproduced in the file jvxml/LICENSE.
+
+ns.go (function getPrefix)
+--------------------------
+
+Description: The section of getPrefix between the two marker comments is a
+    modified copy of code from the function createAttrPrefix in
+    encoding/xml/marshal.go from the Go standard library.  The Go licence
+    text sits directly above the function.
+Upstream:    https://go.dev/src/encoding/xml/marshal.go
+Copyright:   Copyright 2011 The Go Authors.  All rights reserved.
+Licence:     BSD 3-Clause License.
+Full text:   jvxml/LICENSE, and the comment above getPrefix in ns.go.
