@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.7.6] (2026-11-10)
+
+### Changed
+- The function `PacketGetValue` is now the generic method
+  `Packet.GetValue`.  Calls change from `PacketGetValue[E](p, ns, name)`
+  to `p.GetValue[E](ns, name)`.
+- The module requires Go 1.27.
+
+### Fixed
+- `Localized.EncodeXMP` writes the language alternatives in a fixed
+  order, `x-default` first and then the other tags sorted by language.
+  Previously the same value could be written differently from one run
+  to the next.
+
 ## [v0.7.5] (2026-10-10)
 
 ### Fixed
