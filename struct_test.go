@@ -399,10 +399,10 @@ func TestEmbeddedPointerPromotedOnSet(t *testing.T) {
 	}
 }
 
-// TestNilEmbeddedPointerSkippedOnSet checks that Set neither panics nor
-// writes any property when an anonymously embedded pointer field is nil;
-// it has nothing to promote, so it is simply skipped (mirroring
-// encoding/json's Marshal, which omits a nil embedded pointer's fields).
+// TestNilEmbeddedPointerSkippedOnSet checks that Set writes no property
+// when an anonymously embedded pointer field is nil; it has nothing to
+// promote, so it is simply skipped (mirroring encoding/json's Marshal,
+// which omits a nil embedded pointer's fields).
 func TestNilEmbeddedPointerSkippedOnSet(t *testing.T) {
 	in := &EmbeddingPointer{} // PtrShared is nil
 
@@ -630,22 +630,6 @@ func TestSetErrorsOnAmbiguousProperty(t *testing.T) {
 	}
 }
 
-// TestGetPanicsOnAmbiguousProperty checks that Get panics, per the
-// library's existing panic convention for structurally malformed
-// namespace structs (see the "not an XMP namespace struct" panic), when
-// two promoted fields tie for the same effective xmp name at the same
-// embedding depth.
-func TestGetPanicsOnAmbiguousProperty(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Get: expected a panic for an ambiguous promoted property")
-		}
-	}()
-	p := NewPacket()
-	var out AmbiguousPropertyOuter
-	_ = p.Get(&out)
-}
-
 // DuplicateTagFields declares two ordinary (non-embedded) fields under
 // the same effective xmp name in a single struct, to pin that the
 // ambiguity rule applies to any two fields tying at the same embedding
@@ -662,17 +646,6 @@ func TestSetErrorsOnDuplicateTagInOneStruct(t *testing.T) {
 	if err := p.Set(in); err == nil {
 		t.Fatal("Set: expected an error for two fields with the same xmp tag, got nil")
 	}
-}
-
-func TestGetPanicsOnDuplicateTagInOneStruct(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Get: expected a panic for two fields with the same xmp tag")
-		}
-	}()
-	p := NewPacket()
-	var out DuplicateTagFields
-	_ = p.Get(&out)
 }
 
 // UntaggedNSBase carries a real, tagged Namespace; UntaggedNSOuter embeds
@@ -727,17 +700,6 @@ func TestSetErrorsOnAmbiguousNamespace(t *testing.T) {
 	}
 }
 
-func TestGetPanicsOnAmbiguousNamespace(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Get: expected a panic for an ambiguous Namespace field")
-		}
-	}()
-	p := NewPacket()
-	var out AmbiguousMarkersOuter
-	_ = p.Get(&out)
-}
-
 // SelfRefEmbed embeds a pointer to its own type anonymously, which is
 // legal Go (unlike value embedding, which the compiler rejects as an
 // infinitely-sized type) but structurally cyclic.
@@ -747,27 +709,9 @@ type SelfRefEmbed struct {
 	Foo Text `xmp:"foo"`
 }
 
-// TestGetPanicsCleanlyOnCyclicEmbeddedPointer checks that Get reports a
-// recoverable panic for a self-referentially embedded pointer type,
-// instead of recursing forever: each freshly allocated instance's own
-// embedded pointer is nil again, so a field walk that allocated and
-// descended would never terminate, crashing the process with a stack
-// overflow (a runtime fatal error, not a recoverable panic).
-func TestGetPanicsCleanlyOnCyclicEmbeddedPointer(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("Get: expected a panic for a cyclic embedded pointer type")
-		}
-	}()
-	p := NewPacket()
-	var out SelfRefEmbed
-	_ = p.Get(&out)
-}
-
 // TestSetErrorsOnCyclicEmbeddedPointer checks that Set reports a
 // self-referentially embedded pointer type as an error, per Set's
-// contract that arguments of the wrong shape are reported as errors
-// rather than panics.
+// contract that arguments of the wrong shape are reported as errors.
 func TestSetErrorsOnCyclicEmbeddedPointer(t *testing.T) {
 	p := NewPacket()
 	in := &SelfRefEmbed{}

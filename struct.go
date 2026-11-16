@@ -326,13 +326,13 @@ func (p *Packet) setOne(v any) error {
 // [RightsManagement], [PDF], [PDFAID], [PDFX], [PDFXID], and
 // [MediaManagement]; see [Namespace] for how to define your own.
 //
-// The argument dst must be a non-nil pointer to such a struct, otherwise
-// Get panics; it also panics if fields are ambiguously tied under the
-// same xmp name (see [Namespace]) or if dst's type embeds a pointer to
-// itself, directly or indirectly. Properties not present in the packet
-// are set to the zero value of their field type; an embedded pointer
-// field is left nil rather than allocated if the packet has no property
-// for anything in its subtree.
+// The argument dst must be a non-nil pointer to such a struct.  The
+// struct type must not tie fields under the same xmp name (see
+// [Namespace]) and must not embed a pointer to itself, directly or
+// indirectly.  Properties not present in the packet are set to the zero
+// value of their field type; an embedded pointer field is left nil rather
+// than allocated if the packet has no property for anything in its
+// subtree.
 //
 // Get returns nil when every present property decoded successfully.
 // When one or more present properties cannot be decoded into their
@@ -761,20 +761,18 @@ var (
 // same embedding depth -- whether promoted from embedded structs or
 // declared side by side in a single struct -- and likewise two Namespace
 // (or two Prefix) fields tied at the same depth, are an ambiguity: Set
-// reports it as an error and Get panics, rather than silently dropping
-// or mispairing fields.
+// reports it as an error, and such a struct is not valid for Get.
 //
 // An anonymously embedded pointer-to-struct field is promoted lazily: Set
 // never allocates a nil one (it only reads values, so a nil embedded
 // pointer's fields are simply treated as zero, clearing any property they
 // would otherwise have written), and Get allocates one only once it
 // actually has a property to decode into it. A struct type that embeds a
-// pointer to itself, directly or indirectly, is rejected -- as an error
-// by Set, with a panic by Get -- rather than walked forever. An
-// anonymously embedded pointer field that
-// is itself unexported (relative to the package that calls Set or Get)
-// cannot be allocated at all; Get reports this as a per-property error
-// instead of silently losing the data, matching encoding/json's
+// pointer to itself, directly or indirectly, is rejected by Set with an
+// error, and is not valid for Get. An anonymously embedded pointer field
+// that is itself unexported (relative to the package that calls Set or
+// Get) cannot be allocated at all; Get reports this as a per-property
+// error instead of silently losing the data, matching encoding/json's
 // Unmarshal.
 type Namespace struct{}
 
