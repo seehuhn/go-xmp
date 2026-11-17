@@ -721,8 +721,9 @@ const (
 	Alternative
 )
 
-// ErrInvalid is returned by [Packet.GetValue] when XMP data is present in the XML
-// file, but the data does not have the expected structure.
+// ErrInvalid is returned (possibly wrapped) when a property is present in
+// a packet but does not have the structure of the requested type, and when
+// a value cannot be represented in XMP.
 var ErrInvalid = errors.New("invalid XMP data")
 
 // ErrNotFound is returned by [Packet.GetValue] when a requested property is not

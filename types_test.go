@@ -321,12 +321,8 @@ func TestRealEncodeRejectsNonFinite(t *testing.T) {
 	cases := []float64{math.NaN(), math.Inf(1), math.Inf(-1)}
 	for _, v := range cases {
 		_, err := (Real{V: v}).EncodeXMP(nil)
-		if err == nil {
-			t.Errorf("EncodeXMP(%v): expected error, got nil", v)
-			continue
-		}
 		if !errors.Is(err, ErrInvalid) {
-			t.Errorf("EncodeXMP(%v): error %v does not wrap ErrInvalid", v, err)
+			t.Errorf("EncodeXMP(%v): err=%v, want errors.Is(err, ErrInvalid)", v, err)
 		}
 	}
 }
@@ -337,11 +333,8 @@ func TestRealEncodeRejectsNonFinite(t *testing.T) {
 func TestMimeTypeEncodeRejectsInvalid(t *testing.T) {
 	// "image/" is not a well-formed media type
 	_, err := MimeType{V: "image/"}.EncodeXMP(nil)
-	if err == nil {
-		t.Fatal("EncodeXMP: expected error, got nil")
-	}
 	if !errors.Is(err, ErrInvalid) {
-		t.Errorf("error %v does not wrap ErrInvalid", err)
+		t.Errorf("EncodeXMP: err=%v, want errors.Is(err, ErrInvalid)", err)
 	}
 }
 
@@ -351,11 +344,8 @@ func TestMimeTypeEncodeRejectsInvalid(t *testing.T) {
 func TestSetValueInvalidEncodes(t *testing.T) {
 	p := NewPacket()
 	err := p.SetValue("http://ns.example/", "p", Real{V: math.NaN()})
-	if err == nil {
-		t.Fatal("SetValue with NaN: expected error, got nil")
-	}
 	if !errors.Is(err, ErrInvalid) {
-		t.Errorf("error %v does not wrap ErrInvalid", err)
+		t.Errorf("SetValue with NaN: err=%v, want errors.Is(err, ErrInvalid)", err)
 	}
 	if _, ok := p.Properties[xml.Name{Space: "http://ns.example/", Local: "p"}]; ok {
 		t.Error("SetValue stored a property despite encode error")
@@ -382,11 +372,8 @@ func TestLocalizedEncodeRejectsXDefaultInV(t *testing.T) {
 				},
 			}
 			_, err := loc.EncodeXMP(nil)
-			if err == nil {
-				t.Fatal("EncodeXMP: expected error, got nil")
-			}
 			if !errors.Is(err, ErrInvalid) {
-				t.Errorf("error %v does not wrap ErrInvalid", err)
+				t.Errorf("EncodeXMP: err=%v, want errors.Is(err, ErrInvalid)", err)
 			}
 		})
 	}

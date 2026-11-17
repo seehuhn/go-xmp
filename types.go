@@ -33,7 +33,7 @@ type Value interface {
 	// DecodeAnother converts a low-level XMP representation into a [Value].
 	// The resulting Value must have the same concrete type as the receiver.
 	// The receiver is not used otherwise.  If the input is not a valid
-	// representation of the concrete type, the error ErrInvalid is returned.
+	// representation of the concrete type, the error [ErrInvalid] is returned.
 	DecodeAnother(Raw) (Value, error)
 }
 
