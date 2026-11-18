@@ -338,22 +338,17 @@ func (d Date) IsZero() bool {
 
 // String returns d.V formatted as ISO 8601, truncated to the level
 // indicated by d.Precision.  The result is the canonical XMP
-// serialization produced by [Date.EncodeXMP].  A zero d.V yields "";
-// an out-of-range d.Precision is clamped to the nearest defined
-// constant.
+// serialization produced by [Date.EncodeXMP].  A zero d.V yields "".
 func (d Date) String() string {
 	if d.V.IsZero() {
 		return ""
 	}
-	p := min(max(d.Precision, PrecisionFull), PrecisionYear)
-	return d.V.Format(dateEncodeFormats[p])
+	return d.V.Format(dateEncodeFormats[d.Precision])
 }
 
 // EncodeXMP implements the [Value] interface.  It returns an error
 // wrapping [ErrInvalid] if d.Precision is not one of the defined
-// [DatePrecision] constants.  ([Date.String] is more lenient: it
-// clamps an out-of-range Precision so that fmt-style debug output
-// stays panic-free.)
+// [DatePrecision] constants.
 func (d Date) EncodeXMP(*Packet) (Raw, error) {
 	if d.Precision < PrecisionFull || d.Precision > PrecisionYear {
 		return nil, fmt.Errorf("xmp: Date.Precision %s: %w", d.Precision, ErrInvalid)

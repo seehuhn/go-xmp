@@ -162,36 +162,13 @@ func TestDateRoundTrip(t *testing.T) {
 
 // TestDateEncodeXMPRejectsInvalidPrecision verifies that
 // [Date.EncodeXMP] reports an out-of-range Precision as
-// [ErrInvalid] rather than silently clamping it like [Date.String].
+// [ErrInvalid].
 func TestDateEncodeXMPRejectsInvalidPrecision(t *testing.T) {
 	base := time.Date(2024, 5, 1, 13, 30, 45, 0, time.UTC)
 	for _, p := range []DatePrecision{-1, PrecisionYear + 1, 99} {
 		_, err := Date{V: base, Precision: p}.EncodeXMP(nil)
 		if !errors.Is(err, ErrInvalid) {
 			t.Errorf("Precision=%s: err=%v, want errors.Is(err, ErrInvalid)", p, err)
-		}
-	}
-}
-
-// TestDateStringClampsInvalidPrecision verifies that out-of-range
-// [DatePrecision] values are clamped to the nearest defined constant
-// rather than panicking, since [Date.String] is implicitly invoked by
-// the fmt package.
-func TestDateStringClampsInvalidPrecision(t *testing.T) {
-	base := time.Date(2024, 5, 1, 13, 30, 45, 123456789, time.UTC)
-
-	cases := []struct {
-		p    DatePrecision
-		want string
-	}{
-		{-1, "2024-05-01T13:30:45.123456789Z"}, // clamps to PrecisionFull
-		{PrecisionYear + 1, "2024"},            // clamps to PrecisionYear
-		{99, "2024"},                           // clamps to PrecisionYear
-	}
-	for _, tc := range cases {
-		got := Date{V: base, Precision: tc.p}.String()
-		if got != tc.want {
-			t.Errorf("Precision=%s: String() = %q, want %q", tc.p, got, tc.want)
 		}
 	}
 }

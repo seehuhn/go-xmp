@@ -453,11 +453,6 @@ type groupParent = map[int]int
 // is structurally cyclic: the walk cannot terminate, and neither could
 // [Packet.Get], since each freshly allocated instance's own embedded
 // pointer is nil again. collectFields reports such a type as an error.
-//
-// Note: unlike encoding/json, this is not cached per type; it re-walks
-// the struct type on every [Packet.Set] and [Packet.Get] call. Namespace
-// structs are small and this is not called in a hot loop, so the
-// simplicity is worth the (unmeasured) cost.
 func collectFields(t reflect.Type) ([]fieldEntry, groupParent, error) {
 	var entries []fieldEntry
 	parents := groupParent{}
@@ -763,11 +758,10 @@ var (
 // (or two Prefix) fields tied at the same depth, are an ambiguity: Set
 // reports it as an error, and such a struct is not valid for Get.
 //
-// An anonymously embedded pointer-to-struct field is promoted lazily: Set
-// never allocates a nil one (it only reads values, so a nil embedded
-// pointer's fields are simply treated as zero, clearing any property they
-// would otherwise have written), and Get allocates one only once it
-// actually has a property to decode into it. A struct type that embeds a
+// For an anonymously embedded pointer-to-struct field, Set never allocates
+// a nil one (a nil embedded pointer's fields are treated as zero, clearing
+// any property they would otherwise have written), and Get allocates one
+// only if it has a property to decode into it. A struct type that embeds a
 // pointer to itself, directly or indirectly, is rejected by Set with an
 // error, and is not valid for Get. An anonymously embedded pointer field
 // that is itself unexported (relative to the package that calls Set or
