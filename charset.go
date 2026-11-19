@@ -22,6 +22,10 @@ const maxPacketSize = 16 << 20
 // size.
 const inBufSize = 1024
 
+// maxEmptyReads is the number of consecutive (0, nil) results from the
+// source after which reading fails with [io.ErrNoProgress].
+const maxEmptyReads = 100
+
 // ErrPacketTooLarge is returned by [Read] when the input exceeds the
 // internal size limit.
 var ErrPacketTooLarge = errors.New("xmp: packet exceeds size limit")
@@ -79,7 +83,7 @@ func newPacketReader(src io.Reader) (*packetReader, error) {
 			break
 		}
 		avail := min(len(r.inBuf)-r.inLen, quota)
-		m, err := src.Read(r.inBuf[r.inLen : r.inLen+avail])
+		m, err := r.readSrc(r.inBuf[r.inLen : r.inLen+avail])
 		r.nRead += m
 		r.inLen += m
 		if r.nRead > maxPacketSize {
@@ -93,10 +97,6 @@ func newPacketReader(src io.Reader) (*packetReader, error) {
 		}
 		if err != nil {
 			r.srcErr = err
-			break
-		}
-		if m == 0 {
-			// no progress and no error; src misbehaving
 			break
 		}
 	}
@@ -214,7 +214,7 @@ func (r *packetReader) refill() error {
 	}
 	n := min(len(r.inBuf), quota)
 
-	m, err := r.src.Read(r.inBuf[:n])
+	m, err := r.readSrc(r.inBuf[:n])
 	r.nRead += m
 
 	if r.nRead > maxPacketSize {
@@ -244,15 +244,20 @@ func (r *packetReader) refill() error {
 		}
 		return err
 	}
-	if m == 0 {
-		// io.Reader allows (0, nil) but discourages it.  We refuse to
-		// retry: a source that yields zero bytes without progress is
-		// either misbehaving or hostile, and looping or recursing here
-		// would let it hang or stack-overflow Read.  Surface the
-		// standard sentinel for this condition.
-		return io.ErrNoProgress
-	}
 	return nil
+}
+
+// readSrc reads from src, retrying a bounded number of times while the
+// source returns (0, nil).  io.Reader allows such calls, but a source
+// which never makes progress yields [io.ErrNoProgress].
+func (r *packetReader) readSrc(p []byte) (int, error) {
+	for range maxEmptyReads {
+		m, err := r.src.Read(p)
+		if m > 0 || err != nil {
+			return m, err
+		}
+	}
+	return 0, io.ErrNoProgress
 }
 
 // nextRune reads and returns the next decoded Unicode code point from

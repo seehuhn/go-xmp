@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/go-cmp/cmp"
+	"golang.org/x/text/language"
 )
 
 // transcodeUTF8ToUTF16 converts UTF-8 bytes into UTF-16 (BE or LE) for
@@ -374,5 +375,40 @@ func drainBytes(pr *packetReader) ([]byte, error) {
 		if err != nil {
 			return out, err
 		}
+	}
+}
+
+// stutterReader returns (0, nil) before every successful Read of src.
+type stutterReader struct {
+	src     io.Reader
+	stutter bool
+}
+
+func (s *stutterReader) Read(p []byte) (int, error) {
+	s.stutter = !s.stutter
+	if s.stutter {
+		return 0, nil
+	}
+	return s.src.Read(p)
+}
+
+func TestReadStutteringSource(t *testing.T) {
+	p := NewPacket()
+	dc := &DublinCore{}
+	dc.Title.Set(language.Und, "stutter")
+	if err := p.Set(dc); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := p.Write(&buf, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := Read(&stutterReader{src: &buf})
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if !got.Equal(p) {
+		t.Error("round trip failed")
 	}
 }
