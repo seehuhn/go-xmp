@@ -4,6 +4,7 @@
 package xmp
 
 import (
+	"bytes"
 	"cmp"
 	"encoding/xml"
 	"errors"
@@ -27,10 +28,37 @@ type PacketOptions struct {
 var ErrPacketTooLong = errors.New("xmp: encoded packet exceeds PadToLength")
 
 // Write writes the XMP packet to the given writer.
+//
+// If [Packet.PadToLength] is positive and the packet does not fit, nothing
+// is written and the error is [ErrPacketTooLong].  A packet which fits only
+// without indentation is written that way, whatever opt.Pretty says.
 func (p *Packet) Write(w io.Writer, opt *PacketOptions) error {
 	if p.PadToLength < 0 {
 		return fmt.Errorf("xmp: negative PadToLength %d", p.PadToLength)
 	}
+	if p.PadToLength == 0 {
+		return p.encode(w, opt)
+	}
+
+	// whether the packet fits is known only once it is encoded
+	buf := &bytes.Buffer{}
+	err := p.encode(buf, opt)
+	if errors.Is(err, ErrPacketTooLong) && opt != nil && opt.Pretty {
+		buf.Reset()
+		compact := *opt
+		compact.Pretty = false
+		err = p.encode(buf, &compact)
+	}
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(buf.Bytes())
+	return err
+}
+
+// encode writes the XMP packet to w.  If the packet turns out not to fit
+// into PadToLength bytes, part of it has been written by then.
+func (p *Packet) encode(w io.Writer, opt *PacketOptions) error {
 	e, err := p.newEncoder(w, opt)
 	if err != nil {
 		return err

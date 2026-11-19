@@ -365,16 +365,72 @@ func TestPacketPadToLength(t *testing.T) {
 	}
 }
 
-func TestPacketPadToLengthTooSmall(t *testing.T) {
+// TestPacketPadToLengthPretty checks that PadToLength takes precedence over
+// the Pretty option: a packet which fits only without indentation is still
+// written, and one which fits with indentation is indented.
+func TestPacketPadToLengthPretty(t *testing.T) {
+	p := &Packet{
+		Properties: map[xml.Name]Raw{
+			elemTest: Text{V: "hello"},
+		},
+	}
+	pretty := &PacketOptions{Pretty: true}
+
+	compactBuf := &bytes.Buffer{}
+	if err := p.Write(compactBuf, nil); err != nil {
+		t.Fatal(err)
+	}
+	prettyBuf := &bytes.Buffer{}
+	if err := p.Write(prettyBuf, pretty); err != nil {
+		t.Fatal(err)
+	}
+	if prettyBuf.Len() <= compactBuf.Len() {
+		t.Fatal("test is broken: pretty output is not longer")
+	}
+
+	for _, target := range []int{compactBuf.Len(), prettyBuf.Len() - 1, prettyBuf.Len()} {
+		p.PadToLength = target
+		buf := &bytes.Buffer{}
+		if err := p.Write(buf, pretty); err != nil {
+			t.Fatalf("PadToLength=%d: unexpected error: %v", target, err)
+		}
+		if buf.Len() != target {
+			t.Errorf("PadToLength=%d: got %d bytes", target, buf.Len())
+		}
+		if target == prettyBuf.Len() {
+			// no padding, so only the trailer differs
+			want := strings.Replace(prettyBuf.String(), `end="r"`, `end="w"`, 1)
+			if buf.String() != want {
+				t.Error("packet which fits with indentation is not indented")
+			}
+		}
+		out, err := Read(buf)
+		if err != nil {
+			t.Fatalf("PadToLength=%d: round-trip read failed: %v", target, err)
+		}
+		if !out.Equal(p) || out.PadToLength != target {
+			t.Errorf("PadToLength=%d: round trip failed", target)
+		}
+	}
+}
+
+// TestPacketPadToLengthNoPartialWrite checks that nothing is written when
+// the packet does not fit.
+func TestPacketPadToLengthNoPartialWrite(t *testing.T) {
 	p := &Packet{
 		Properties: map[xml.Name]Raw{
 			elemTest: Text{V: "hello"},
 		},
 		PadToLength: 10,
 	}
-	err := p.Write(&bytes.Buffer{}, nil)
-	if !errors.Is(err, ErrPacketTooLong) {
-		t.Errorf("got %v, want ErrPacketTooLong", err)
+	for _, opt := range []*PacketOptions{nil, {Pretty: true}} {
+		buf := &bytes.Buffer{}
+		if err := p.Write(buf, opt); !errors.Is(err, ErrPacketTooLong) {
+			t.Errorf("got %v, want ErrPacketTooLong", err)
+		}
+		if buf.Len() != 0 {
+			t.Errorf("%d bytes written for a packet which does not fit", buf.Len())
+		}
 	}
 }
 
