@@ -82,11 +82,6 @@ func getPrefix(prefixToNS map[string]string, ns string) string {
 	return prefix
 }
 
-var defaultPrefix = map[string]string{
-	NSXML: "xml",
-	NSRDF: "rdf",
-}
-
 // Namespace URIs for the predefined XMP schemas, plus the auxiliary
 // namespaces (XML, RDF, ResourceRef) used by the XMP serialization
 // itself.  The schema URIs (NSDublinCore through NSPDFXID) are
